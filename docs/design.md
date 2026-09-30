@@ -50,6 +50,7 @@ decorativos só entram quando têm função.
 | `paper`                 | Cor de papel: páginas, detalhes inspirados em livros       |
 | `accent`                | Detalhe dourado/envelhecido, foco, seleção. Usar com moderação |
 | `border`                | Bordas discretas, quando realmente necessárias             |
+| `black`                 | Preto puro do fim do vídeo do Hero. Somente em transições ligadas ao vídeo (fade da seção seguinte, faixa escura do topo) |
 
 Uso nas classes: `bg-surface`, `text-foreground-muted`, `border-border`,
 `bg-paper text-background` etc. A paleta padrão do Tailwind foi removida
@@ -145,6 +146,23 @@ mudança de superfície (`background` → `background-secondary` →
 - Animações em JavaScript (GSAP) não são cobertas pela regra CSS e
   precisam tratar a preferência explicitamente (`gsap.matchMedia()`),
   exibindo diretamente o estado final.
+
+## Hero
+
+- No início do scroll o Hero mostra o idle em loop (estado de repouso).
+  Ao rolar, o idle some em um fade de 0,4s e a cena passa a seguir o
+  scroll; ao voltar ao início, o idle reaparece com o mesmo fade. Sem
+  movimento permitido (reduced motion ou autoplay negado), o Hero
+  mostra o poster estático.
+- Os vídeos preenchem o Hero com `object-cover`, sem distorção. Abaixo de
+  768px o enquadramento é deslocado para 40% na horizontal, para manter
+  o leitor e o livro visíveis no crop vertical.
+- Sobre o Hero a Navbar não tem fundo; uma faixa `from-black/60` no topo
+  do Hero, que aparece junto com a Navbar, garante o contraste.
+- O preto final do vídeo continua na seção seguinte: ela começa em
+  `black` e chega a `background` na metade da altura, sem costura.
+- Nenhum texto ou efeito é sobreposto à cena; conteúdo essencial não
+  depende do vídeo.
 
 ## Ícones
 

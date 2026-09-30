@@ -18,6 +18,7 @@
   --color-paper: #f1e8d7;
   --color-accent: #b89a63;
   --color-border: rgb(244 239 231 / 0.1);
+  --color-black: #000000;
 
   --font-weight-*: initial;
   --font-weight-normal: 400;
@@ -74,6 +75,17 @@
   html {
     color-scheme: dark;
     background-color: var(--color-background);
+  }
+
+  /*
+   * Estado inicial da Navbar em páginas com o Hero, antes da hidratação;
+   * depois dela, o GSAP controla o header (#site-header) com estilos inline.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    body:has([data-hero]) #site-header {
+      opacity: 0;
+      pointer-events: none;
+    }
   }
 
   /* O conteúdo atrás de um <dialog> modal não deve rolar. */

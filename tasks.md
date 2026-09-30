@@ -68,10 +68,30 @@ Observações:
 - [x] Trava global de scroll enquanto um `<dialog>` modal estiver aberto
 - [x] Checks: `typecheck`, `lint` e `build`; testes em 390/768/1024/1440px, teclado, abertura/fechamento do menu e reduced motion
 
-## Fase 04 — Hero
+## Fase 04 — Hero ✅
 
-- [ ] `src/components/hero/` com GSAP + ScrollTrigger e suporte a `prefers-reduced-motion`
-- [ ] Comportamento da Navbar durante o Hero (aparecimento progressivo, transparência), animando o `<header>` de `Navbar.tsx`
+- [x] `src/components/hero/`: `Hero.tsx` e `createVideoScrubber.ts`
+- [x] `gsap` instalado (GSAP + ScrollTrigger)
+- [x] Vídeo controlado pelo scroll via `currentTime`, com pin por 3 viewports (`decisions.md`, 004)
+- [x] Scrub reversível, sem autoplay, retornando ao primeiro quadro
+- [x] Preto final do vídeo conectado à seção seguinte (token `black`)
+- [x] `hero-poster.jpg` (primeiro quadro, extraído sem alterar o `hero.mp4`)
+- [x] Navbar integrada à timeline: aparece entre 2% e 14%, transparente sobre o Hero, visível com foco por teclado
+- [x] Reduced motion: poster estático, sem pin e sem download do vídeo
+- [x] Enquadramento do vídeo ajustado no mobile
+- [x] Section 02 provisória (conteúdo da Fase 02) como alvo de "Pular para o conteúdo"
+- [x] Checks: `typecheck`, `lint` e `build`; testes automatizados no Chrome em 390/768/1024/1440px (ver relatório da fase)
+- [x] `hero-scrub.mp4` gerado a partir do `hero.mp4` com keyframes a cada 6 quadros (`decisions.md`, 005)
+- [x] Idle com `hero-idle.webm` (VP9); o idle MP4 anterior fica em `assets-source/hero/` e não é mais usado
+- [x] Idle bidirecional: loop no início do scroll, pausa ao rolar e retorno ao voltar ao topo, com fade nos dois sentidos
+- [x] Nunca dois vídeos reproduzindo ao mesmo tempo; reduced motion sem download de vídeos
+- [x] Checks: `typecheck`, `lint` e `build`; testes automatizados no Chrome em 390/768/1024/1440px com dois ciclos topo → baixo → topo, incluindo scroll contínuo, reduced motion e modo dev (StrictMode)
+
+Pendências e melhorias:
+
+- [ ] Testar em dispositivos reais, principalmente Safari/iOS e Firefox (os testes desta fase usaram somente Chrome headless); confirmar o suporte a WebM VP9 no Safari/iOS
+- [ ] Asset mobile (vertical) opcional, via `HERO_MEDIA` no `Hero.tsx`
+- [ ] Idealmente, alinhar o enquadramento do idle ao quadro 0 do scrub (hoje há uma leve diferença, suavizada pelo fade)
 
 ## Fase 05 — Supabase e Banco de Dados
 
@@ -89,6 +109,7 @@ Observações:
 
 - [ ] `src/components/library/`, `bookshelf/`, `book/`
 - [ ] Preencher o `href` de My Library em `navigation.ts`; seção com `scroll-margin-top` para o header fixo
+- [ ] Substituir o conteúdo provisório da seção após o Hero (`page.tsx`), mantendo o início em `black`
 - [ ] Rolagem suave pontual até a seção (sem `scroll-behavior` global)
 
 ## Fase 08 — Gerenciamento de Livros

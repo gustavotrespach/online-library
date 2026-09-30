@@ -5,6 +5,7 @@ import { navigationItems } from "./navigation";
 import { NavigationLink } from "./NavigationLink";
 
 export const MAIN_CONTENT_ID = "main-content";
+export const SITE_HEADER_ID = "site-header";
 
 export function Navbar() {
   return (
@@ -16,8 +17,15 @@ export function Navbar() {
         Pular para o conteúdo
       </a>
 
-      {/* Sem transições de opacity/transform: a Fase 04 anima o header com GSAP. */}
-      <header className="fixed inset-x-0 top-0 z-40 bg-background/80 backdrop-blur-md">
+      {/*
+        Sem transições CSS de opacity/transform: o Hero anima o header com GSAP.
+        Sobre o Hero o fundo é transparente; com foco por teclado o header
+        aparece mesmo que a animação ainda o mantenha oculto.
+      */}
+      <header
+        id={SITE_HEADER_ID}
+        className="fixed inset-x-0 top-0 z-40 bg-background/80 backdrop-blur-md focus-within:pointer-events-auto! focus-within:transform-none! focus-within:opacity-100! data-over-hero:bg-transparent data-over-hero:backdrop-blur-none"
+      >
         <div className="page-container flex h-16 items-center justify-between md:h-20 lg:grid lg:grid-cols-[1fr_auto_1fr]">
           <Link
             href="/"

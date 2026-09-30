@@ -125,3 +125,165 @@ focus trap.
 - Novos overlays devem seguir o padrão de `MobileMenu.tsx`.
 - Um overlay oculto por CSS em algum breakpoint precisa ser fechado
   quando o breakpoint mudar, para não deixar a página inerte.
+
+------------------------------------------------------------------------
+
+## 004 — Hero: vídeo controlado pelo scroll com GSAP ScrollTrigger
+
+**Data:** 2026-09-30 · **Fase:** 04 — Hero
+
+> Atualizada pela decisão 005: o scrub usa `hero-scrub.mp4` e o Hero
+> passou a ter um estado idle antes do primeiro scroll.
+
+### Contexto
+
+O Hero é uma cena pré-renderizada (`public/assets/hero/hero.mp4`:
+1280×720, H.264, 9,04s, 24 fps, sem áudio, termina em preto). O scroll
+deve avançar e retroceder a cena, com o Hero fixado até o último quadro.
+
+### Decisão
+
+- **O vídeo é a animação.** Nenhum efeito visual da cena é recriado em
+  CSS/SVG; o código só controla o tempo. O vídeo nunca é reproduzido com
+  `play()` nem `autoplay`.
+- **Scroll → `currentTime`.** Uma timeline GSAP com ScrollTrigger
+  (`pin: true`, `scrub: 0.5`) anima um playhead normalizado (0–1);
+  `createVideoScrubber` converte esse valor em `currentTime` aplicando
+  somente o alvo mais recente quando o seek anterior termina, sem
+  enfileirar seeks.
+- **Distância de scroll: 3 alturas de viewport** (≈ 3s de vídeo por
+  tela), ajustável em `SCROLL_DISTANCE_IN_VIEWPORTS` no `Hero.tsx`.
+- **Navbar:** a Navbar existente (`#site-header`) é animada pela mesma
+  timeline (opacidade e deslocamento, entre 2% e 14% da timeline),
+  configurável em `NAVBAR_REVEAL`. Sobre o Hero, o header fica
+  transparente (`data-over-hero`) e uma faixa escura no topo do Hero
+  garante contraste sobre os quadros claros.
+- **Reduced motion:** via `gsap.matchMedia()`. Nada é criado: sem pin,
+  sem timeline e sem download do vídeo (`preload="none"`); o Hero exibe
+  o poster (primeiro quadro, `hero-poster.jpg`) e a Navbar fica no
+  estado padrão.
+
+### Motivo
+
+- Seek por `currentTime` é naturalmente reversível e mantém um único
+  asset de vídeo, sem sequência de imagens.
+- Medição no Chrome com o asset atual: **o vídeo tem um único keyframe
+  (quadro 1 de 217)**, então cada seek decodifica desde o início —
+  latência de ~6ms no começo a ~77ms no fim. Seeks enfileirados
+  acumulariam atraso; aplicar apenas o alvo mais recente mantém o vídeo
+  alinhado ao scroll (diferença < 1 quadro após o scroll parar).
+- 3 viewports equilibram ritmo cinematográfico e esforço de scroll; 1
+  viewport pareceria arrastar um vídeo, e mais de 4 tornaria a abertura
+  cansativa.
+
+### Alternativas consideradas
+
+- **`gsap.to(video, { currentTime })` direto:** dispara um seek por
+  tick, que se acumulam com este asset.
+- **Sequência de imagens em canvas:** scrub mais fluido, mas centenas de
+  requests e muito mais peso; o vídeo continua sendo o asset principal.
+- **Reduzir a animação no reduced motion:** ainda exigiria atravessar a
+  timeline; o poster estático respeita melhor a preferência.
+
+### Consequências
+
+- Uma versão do vídeo com keyframes frequentes (arquivo novo, sem
+  alterar o original) deixaria o scrub mais fluido, principalmente em
+  celulares. Trocar o asset exige só mudar `HERO_VIDEO` no `Hero.tsx`.
+- Um asset mobile futuro também entra por `HERO_VIDEO`, sem mudar a
+  timeline.
+- A Navbar nasce oculta em páginas com o Hero por uma regra CSS
+  (`body:has([data-hero])`), evitando que ela pisque antes da
+  hidratação. Sem JavaScript, ela permanece oculta nessas páginas.
+- O header não pode ter transições CSS de opacity/transform, e novas
+  seções após o Hero não precisam compensar o pin (o ScrollTrigger
+  reserva o espaço).
+
+------------------------------------------------------------------------
+
+## 005 — Hero: estado idle bidirecional e assets de vídeo
+
+**Data:** 2026-09-30 · **Fase:** 04 — Hero
+
+### Contexto
+
+O Hero tem dois estados: **idle** (loop sutil, câmera parada) e
+**scrub** (a cena segue o scroll). O idle é o estado de repouso do Hero
+e retorna quando o usuário volta ao início do scroll.
+
+Na preparação dos assets:
+
+- `hero-scrub.mp4` não existia; o `hero.mp4` tem um único keyframe, com
+  seeks de ~50–70ms (decisão 004).
+- O primeiro idle recebido (`mp4v`, MPEG-4 Part 2) não era reproduzido
+  por Chrome, Edge e Firefox. Ele foi substituído pelo
+  `hero-idle.webm`, fornecido pelo usuário.
+
+### Decisão
+
+**Assets** (`public/assets/hero/`):
+
+| Arquivo | Origem | Formato |
+| --- | --- | --- |
+| `hero-idle.webm` | fornecido pelo usuário | WebM VP9, 1280×720, 5s, sem áudio, loop sem emenda |
+| `hero-scrub.mp4` | gerado do `hero.mp4` com AVFoundation (macOS) | H.264 High, 1280×720, 24 fps, keyframe a cada 6 quadros, sem B-frames, qualidade 0.75, `moov` no início, sem áudio |
+
+`hero.mp4` permanece preservado e não é referenciado pelo código. O
+idle MP4 anterior fica em `assets-source/hero/hero-idle.original.mp4`,
+fora de `public/`, e não é mais usado.
+
+**Comportamento:**
+
+- Dois `<video>` sobrepostos: o idle (em cima, `loop`) e o scrub
+  (embaixo). Nenhum tem `autoplay` no HTML; o idle é iniciado com
+  `play()` somente com `prefers-reduced-motion: no-preference`. Se o
+  autoplay for negado, o poster permanece.
+- O download do scrub começa quando o idle já está tocando (ou quando o
+  autoplay é negado), priorizando o que aparece primeiro.
+- **Idle → scrub:** no `onUpdate` do ScrollTrigger do pin, quando a
+  posição real do scroll passa do início do Hero. O idle é pausado e
+  some em um fade de 0,4s; o scrub segue o scroll.
+- **Scrub → idle:** no `onUpdate` do playhead da timeline, quando o
+  scroll está no início do Hero **e** o playhead suavizado chegou a menos
+  de 0,1% da timeline (`currentTime` < ~0,01s). O idle volta a tocar e
+  aparece em um fade de 0,4s, continuando o loop de onde parou.
+- O scrub nunca é reproduzido, apenas posicionado; o idle só toca no
+  estado idle. Os dois vídeos nunca tocam ao mesmo tempo.
+- Nenhum listener de scroll, ScrollTrigger ou timeline adicional: os dois
+  sentidos usam callbacks já existentes, e o estado fica em uma variável
+  de closure (sem estado React).
+- Reduced motion: nenhum vídeo é baixado ou reproduzido; apenas o poster.
+
+### Motivo
+
+- Keyframes a cada 6 quadros reduzem o seek para ~3ms (máximo ~5ms) com
+  PSNR de 42–52 dB em relação ao original (visualmente equivalente), e o
+  arquivo cai de 7,9MB para 3,9MB.
+- Elementos separados evitam a tela vazia que a troca de `src` de um
+  único `<video>` causaria, e mantêm o idle pronto para voltar sem novo
+  download.
+- `progress > 0` não indica scroll: no topo da página o ScrollTrigger usa
+  `start = -0.001` e chama `onUpdate` durante o refresh. Pelo mesmo
+  motivo, a timeline nunca chega a exatamente 0 no topo, então o retorno
+  usa um limiar (0,1%) em vez de `onReverseComplete`.
+- Esperar o playhead suavizado alcançar o início evita que o idle
+  reapareça enquanto o scrub ainda está retrocedendo.
+
+### Alternativas consideradas
+
+- **Um único `<video>` trocando o `src`:** tela vazia ou poster a cada
+  troca de estado.
+- **Idle somente na primeira visita ao topo:** deixava o Hero congelado
+  no quadro 0 do scrub ao voltar; o idle é o estado de repouso.
+- **ffmpeg para gerar o scrub:** mesmo resultado, mas exigiria instalar
+  uma dependência de sistema; o AVFoundation já está disponível.
+
+### Consequências
+
+- Os vídeos baixados na página inicial somam ~4,1MB (idle 0,24MB +
+  scrub 3,9MB), contra 7,9MB do `hero.mp4`.
+- Um novo asset de scrub precisa de keyframes frequentes e `moov` no
+  início. O idle depende de suporte a WebM VP9; onde não houver, o
+  poster é exibido.
+- Idle e quadro 0 do scrub têm enquadramentos levemente diferentes; o
+  fade suaviza a troca, mas assets futuros devem idealmente coincidir.
