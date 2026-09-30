@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/*
+ * Tokens do sistema visual. Regras de uso em docs/design.md.
+ * As escalas padrão de cores, raios e pesos do Tailwind são removidas para
+ * que os componentes utilizem somente os tokens do projeto.
+ * `static` emite todas as variáveis mesmo sem classe que as utilize, para
+ * que fiquem disponíveis via var() em CSS próprio e em animações.
+ */
+@theme static {
+  --color-*: initial;
+  --color-background: #11100f;
+  --color-background-secondary: #181614;
+  --color-surface: #211e1b;
+  --color-foreground: #f4efe7;
+  --color-foreground-muted: #b7b0a6;
+  --color-foreground-subtle: #77716a;
+  --color-paper: #f1e8d7;
+  --color-accent: #b89a63;
+  --color-border: rgb(244 239 231 / 0.1);
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --text-display: clamp(2.75rem, 1.75rem + 4.5vw, 5.5rem);
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.01em;
+
+  --radius-*: initial;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --container-site: 90rem;
+
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-smooth-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --default-transition-duration: 200ms;
+  --default-transition-timing-function: var(--ease-smooth);
+}
+
+/* As variáveis das fontes são definidas pelo next/font no layout raiz. */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant-garamond), ui-serif, Georgia, serif;
+}
+
+@utility page-container {
+  width: 100%;
+  max-width: var(--container-site);
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+
+  @variant md {
+    padding-inline: 2rem;
+  }
+
+  @variant lg {
+    padding-inline: 3rem;
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+
+  html {
+    color-scheme: dark;
+    background-color: var(--color-background);
+  }
+
+  /* O conteúdo atrás de um <dialog> modal não deve rolar. */
+  html:has(dialog:modal) {
+    overflow: hidden;
+  }
+
+  body {
+    color: var(--color-foreground);
+    line-height: 1.6;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-serif);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-background);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+  }
+
+  /*
+   * Mantém os estados finais e a funcionalidade, removendo o movimento.
+   * `!important` na camada base vence qualquer transição definida em
+   * camadas posteriores, inclusive utilitários.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
