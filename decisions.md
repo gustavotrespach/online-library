@@ -287,3 +287,75 @@ fora de `public/`, e não é mais usado.
   poster é exibido.
 - Idle e quadro 0 do scrub têm enquadramentos levemente diferentes; o
   fade suaviza a troca, mas assets futuros devem idealmente coincidir.
+
+------------------------------------------------------------------------
+
+## 006 — Modelo de dados inicial: `books` compartilhado e `user_books`
+
+**Data:** 2026-09-30 · **Fase:** 05A — Supabase Database Foundation
+
+### Contexto
+
+A biblioteca precisa guardar dados do livro (título, autor, capa…) e
+dados pessoais de leitura (progresso, datas, opinião), isolados por
+usuário e protegidos pelo banco. A identidade já é fornecida pelo
+Supabase Auth (`auth.users`), e a autenticação só será implementada na
+Fase 06.
+
+### Decisão
+
+- Schema versionado em `supabase/migrations/`; nada é criado pelo
+  Dashboard.
+- Três tabelas: `profiles` (1:1 com `auth.users`), `books` (dados do
+  livro, compartilháveis) e `user_books` (um livro na biblioteca de um
+  usuário, com `progress`, `started_at`, `finished_at` e `feedback`).
+- `profiles.id` e `user_books.user_id` referenciam **`auth.users.id`
+  diretamente**, e não um ao outro.
+- Status de leitura derivado de `progress` (0–100); sem `status` nem
+  `is_read`.
+- Exclusão: `cascade` de `auth.users` para `profiles` e `user_books`;
+  `restrict` de `books` para `user_books`.
+- Privilégios explícitos (`revoke`/`grant`) e RLS em todas as tabelas:
+  `anon` sem acesso; cada usuário lê e altera somente o próprio profile
+  e os próprios `user_books`; `books` somente leitura para usuários
+  autenticados.
+
+Detalhes: `docs/banco-de-dados.md`.
+
+### Motivo
+
+- Separar dados do livro de dados pessoais permite que um mesmo livro
+  esteja em várias bibliotecas sem duplicar progresso ou opinião em
+  `books`.
+- Referenciar `auth.users` direto permite policies simples
+  (`auth.uid() = user_id`) e não exige um trigger de criação de profile
+  antes da Fase 06.
+- `restrict` em `books` impede que a remoção de um livro apague
+  silenciosamente a biblioteca de outros usuários.
+- Privilégios explícitos tornam o acesso reproduzível e independente de
+  mudanças nos defaults da plataforma; RLS garante o isolamento por
+  linha.
+
+### Alternativas consideradas
+
+- **`user_id` referenciando `profiles.id`:** exigiria que todo usuário
+  tivesse profile antes de usar a biblioteca.
+- **Livro com dados de leitura em uma única tabela por usuário:**
+  duplicaria os dados do livro e dificultaria a futura deduplicação de
+  edições.
+- **`isbn` único em `books`:** rejeitado enquanto não houver estratégia
+  de normalização de edições.
+- **Policies de escrita em `books` para usuários:** adiadas até a
+  definição do fluxo de criação de livros com as APIs externas.
+
+### Consequências
+
+- Nenhum usuário consegue criar livros ainda. A Fase 08 precisa definir
+  como `books` é escrito (e revisar grants/policies) antes de a
+  biblioteca adicionar livros.
+- Remover um livro exige remover antes os `user_books` que o
+  referenciam.
+- O profile precisa ser criado explicitamente na Fase 06 (trigger ou
+  fluxo da aplicação, a decidir).
+- Tipos TypeScript do banco serão gerados pela Supabase CLI na Fase 05B,
+  junto com o cliente que os consome.

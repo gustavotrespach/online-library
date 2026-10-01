@@ -95,15 +95,44 @@ Pendências e melhorias:
 
 ## Fase 05 — Supabase e Banco de Dados
 
-- [ ] `src/lib/supabase/` e `supabase/migrations/`
+### 05A — Supabase Database Foundation ✅
+
+- [x] Supabase CLI 2.119.0 como dev dependency (`npx supabase`)
+- [x] `supabase init`: `supabase/config.toml` (sem secrets; somente referências `env(...)`)
+- [x] Migration `20260930225042_create_initial_library_schema.sql`: `profiles`, `books`, `user_books`
+- [x] Constraints, foreign keys com `on delete` explícito e trigger `set_updated_at`
+- [x] Privilégios explícitos e Row Level Security nas três tabelas (`decisions.md`, 006)
+- [x] Testes pgTAP em `supabase/tests/` (`rls_test.sql`: 21; `schema_test.sql`: 17)
+- [x] `docs/banco-de-dados.md`
+- [x] Checks: `typecheck`, `lint` e `build`
+- [x] Validação local real (Docker Desktop 29.8.1, PostgreSQL 17.11): `npx supabase start`, `db reset` e `test db` com sucesso; 38/38 testes pgTAP passando
+- [x] Projeto remoto (Online Library, `sa-east-1`, PostgreSQL 17.11) vinculado com `supabase link`
+- [x] Migration aplicada no remoto com `db push`, após `db push --dry-run` listar somente `20260930225042_create_initial_library_schema.sql`
+- [x] Validação remota somente leitura: colunas, constraints, foreign keys, RLS, policies, grants, triggers e índices conferem com a migration; advisors sem alertas de segurança
+
+Observações:
+
+- Antes do Docker, a migration e os testes foram validados no PGlite
+  (Postgres 18, WASM), também com 38/38. O código de erro do `restrict`
+  difere entre as versões (23503 no 17, 23001 no 18); o teste compara o
+  nome da constraint.
+- Os testes pgTAP não foram executados no remoto: eles inserem dados
+  (em transação desfeita), e a validação remota foi somente leitura.
+- O advisor de performance aponta, em nível INFO, a FK
+  `user_books.book_id` sem índice, omissão prevista em
+  `docs/banco-de-dados.md` (seção Índices).
+
+### 05B — Cliente Supabase
+
+- [ ] `src/lib/supabase/` (clientes browser/server)
 - [ ] `.env.example` (adicionar `!.env.example` ao `.gitignore`, que hoje ignora `.env*`)
-- [ ] Row Level Security
-- [ ] `docs/banco-de-dados.md`
+- [ ] Tipos gerados com `npx supabase gen types typescript --local`
 
 ## Fase 06 — Autenticação
 
 - [ ] `src/components/auth/` com Supabase Auth
 - [ ] Substituir os placeholders de `AccountActions` por destinos reais e pelo menu do usuário autenticado
+- [ ] Definir e implementar a criação do `profile` (trigger ou fluxo da aplicação)
 
 ## Fase 07 — My Library
 
@@ -116,6 +145,9 @@ Pendências e melhorias:
 
 - [ ] `src/components/book-modal/` e `src/lib/books/`
 - [ ] Modal com `<dialog>` nativo, seguindo o padrão de `MobileMenu.tsx` (`decisions.md`, 003)
+- [ ] Definir como `books` é escrito e revisar grants/policies (hoje somente leitura; `decisions.md`, 006)
+- [ ] Identificador externo do livro e estratégia de deduplicação de edições
+- [ ] Bucket e policies de Storage para capas personalizadas, por migration
 
 ## Fase 09 — Reading Progress
 
