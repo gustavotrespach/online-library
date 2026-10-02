@@ -122,17 +122,30 @@ Observações:
   `user_books.book_id` sem índice, omissão prevista em
   `docs/banco-de-dados.md` (seção Índices).
 
-### 05B — Cliente Supabase
+### 05B — Cliente Supabase ✅
 
-- [ ] `src/lib/supabase/` (clientes browser/server)
-- [ ] `.env.example` (adicionar `!.env.example` ao `.gitignore`, que hoje ignora `.env*`)
-- [ ] Tipos gerados com `npx supabase gen types typescript --local`
+- [x] `@supabase/supabase-js` 2.117.2 e `@supabase/ssr` 0.12.7
+- [x] `src/lib/supabase/`: `client.ts` (navegador), `server.ts` (servidor, cookies via `getAll`/`setAll`, `server-only`) e `env.ts` (`decisions.md`, 007)
+- [x] `.env.example` com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, sem valores; `!.env.example` no `.gitignore`
+- [x] `src/types/database.ts` gerado com `npx supabase gen types typescript --linked --schema public`
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`
+- [x] Validação dos clientes fora do repositório: checagem de tipos (consultas tipadas, tabela/campo inexistente e tipo errado rejeitados) e inicialização em runtime dos módulos reais com `cookies()` simulado, sem rede
+- [x] `.env.local` configurado (ignorado pelo Git) com URL e chave publishable do projeto remoto; clientes browser e server inicializados com as variáveis reais, sem consultas ao banco
+
+Observações:
+
+- Nenhum componente usa os clientes ainda; o website continua rodando
+  sem `.env.local`. A primeira chamada sem as variáveis gera um erro
+  explícito.
+- A inicialização do browser client foi testada no Node, não em um
+  navegador real.
 
 ## Fase 06 — Autenticação
 
 - [ ] `src/components/auth/` com Supabase Auth
 - [ ] Substituir os placeholders de `AccountActions` por destinos reais e pelo menu do usuário autenticado
 - [ ] Definir e implementar a criação do `profile` (trigger ou fluxo da aplicação)
+- [ ] `proxy.ts` para renovar a sessão nos cookies (`decisions.md`, 007)
 
 ## Fase 07 — My Library
 

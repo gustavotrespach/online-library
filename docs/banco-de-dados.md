@@ -242,15 +242,21 @@ leitura (catálogo do Postgres via `npx supabase db query --linked` e
 RLS, policies, grants e triggers conferem com a migration. Os testes
 pgTAP não são executados no remoto.
 
-## Pendências (Fase 05B)
+## Acesso pelo Next.js
 
-- Criar os clientes Supabase em `src/lib/supabase/`.
-- Criar o `.env.example` com as variáveis abaixo.
-- Gerar os tipos TypeScript.
+O website acessa o banco somente pelos clientes de `src/lib/supabase/`
+(`decisions.md`, 007), sempre com a chave publishable e sujeito ao RLS:
+
+- `client.ts`: Client Components;
+- `server.ts`: Server Components, Server Functions e Route Handlers
+  (um cliente por request, sessão lida dos cookies).
+
+Nenhum código do website usa a secret key ou a `service_role`.
 
 ## Variáveis de ambiente
 
-Usadas a partir da Fase 05B, quando o cliente Supabase for criado:
+Documentadas em `.env.example`; os valores locais ficam em `.env.local`,
+ignorado pelo Git.
 
 | Variável                               | Uso                                   |
 | -------------------------------------- | ------------------------------------- |
@@ -262,11 +268,14 @@ Nunca versionar nem expor ao navegador: senha do banco, secret key,
 
 ## Tipos TypeScript
 
-Ainda não gerados. Serão gerados na Fase 05B, junto com o cliente
-Supabase que os consome, a partir do banco local:
+`src/types/database.ts` é gerado pela Supabase CLI a partir do projeto
+remoto vinculado e não deve ser editado manualmente. Depois de aplicar
+uma nova migration no remoto, regenerar com:
 
 ``` bash
-npx supabase gen types typescript --local
+npx supabase gen types typescript --linked --schema public > src/types/database.ts
 ```
 
-Os tipos gerados não devem ser editados manualmente.
+A geração a partir do banco local (`--local`) produz os mesmos tipos,
+mas sem formatação e sem o bloco `__InternalSupabase`; por isso o
+arquivo versionado usa `--linked`.

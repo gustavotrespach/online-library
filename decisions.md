@@ -359,3 +359,60 @@ Detalhes: `docs/banco-de-dados.md`.
   fluxo da aplicação, a decidir).
 - Tipos TypeScript do banco serão gerados pela Supabase CLI na Fase 05B,
   junto com o cliente que os consome.
+
+------------------------------------------------------------------------
+
+## 007 — Clientes Supabase e tipos gerados do banco
+
+**Data:** 2026-09-30 · **Fase:** 05B — Supabase Client
+
+### Contexto
+
+O website precisa acessar o Supabase a partir de Client Components e do
+servidor (Server Components, Server Functions, Route Handlers). A
+autenticação da Fase 06 dependerá de sessão em cookies, e o código
+precisa de tipos que correspondam ao schema da Fase 05A.
+
+### Decisão
+
+- Bibliotecas oficiais: `@supabase/supabase-js` e `@supabase/ssr`.
+- `src/lib/supabase/client.ts` (`createBrowserClient`) para o navegador e
+  `src/lib/supabase/server.ts` (`createServerClient`) para o servidor.
+  O cliente do servidor é criado a cada chamada, lê e grava cookies pelo
+  `cookies()` do Next.js com `getAll`/`setAll`, e importa `server-only`.
+- Os dois usam somente `NEXT_PUBLIC_SUPABASE_URL` e
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, lidas em
+  `src/lib/supabase/env.ts`, que falha com mensagem clara se faltarem.
+- `src/types/database.ts` é gerado pela Supabase CLI a partir do projeto
+  remoto e não é editado manualmente.
+- Não foram criados `src/types/book.ts` nem `src/types/user.ts`: ainda
+  não há código de domínio que os use, e o arquivo gerado já oferece
+  `Tables<"books">`, `TablesInsert<…>` e `TablesUpdate<…>`.
+
+### Motivo
+
+- `@supabase/ssr` é o caminho oficial para App Router: a sessão fica em
+  cookies e é visível tanto no navegador quanto no servidor.
+- Um cliente de servidor por request evita compartilhar a sessão de um
+  usuário com outro; `server-only` impede que esse módulo chegue a um
+  Client Component.
+- Tipos gerados do banco real não divergem do schema; tipos manuais
+  duplicariam as migrations.
+
+### Alternativas consideradas
+
+- **Somente `@supabase/supabase-js` (`createClient`):** guarda a sessão
+  em `localStorage`, invisível para o servidor.
+- **API `get`/`set`/`remove` de cookies:** deprecated no `@supabase/ssr`.
+- **Tipos escritos à mão ou aliases de domínio agora:** duplicação sem
+  consumidor.
+
+### Consequências
+
+- Server Components não podem gravar cookies: o `setAll` ignora o erro
+  nesse contexto. A renovação da sessão precisará do `proxy.ts`
+  (substituto do `middleware` no Next.js 16) na Fase 06.
+- Toda nova migration aplicada no remoto exige regenerar
+  `src/types/database.ts` (comando em `docs/banco-de-dados.md`).
+- Aliases de domínio (ex.: status derivado de `progress`) devem ser
+  criados quando houver código que os use, a partir dos tipos gerados.
