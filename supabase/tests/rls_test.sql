@@ -1,19 +1,18 @@
 -- Testes de Row Level Security (pgTAP). Executar com: npx supabase test db
--- Usuários fictícios: A = 1111…, B = 2222…, C = 3333… (C não possui profile).
+-- Usuários fictícios: A = 1111…, B = 2222…, C = 3333… (o profile de C é removido).
 
 begin;
 create extension if not exists pgtap with schema extensions;
 select plan(21);
 
--- Dados iniciais, inseridos como postgres (ignora RLS).
-insert into auth.users (id, email) values
-  ('11111111-1111-1111-1111-111111111111', 'user-a@example.test'),
-  ('22222222-2222-2222-2222-222222222222', 'user-b@example.test'),
-  ('33333333-3333-3333-3333-333333333333', 'user-c@example.test');
+-- Dados iniciais, inseridos como postgres (ignora RLS). Os profiles são
+-- criados pelo trigger de auth.users.
+insert into auth.users (id, email, raw_user_meta_data) values
+  ('11111111-1111-1111-1111-111111111111', 'user-a@example.test', '{"display_name": "Usuário A"}'),
+  ('22222222-2222-2222-2222-222222222222', 'user-b@example.test', '{"display_name": "Usuário B"}'),
+  ('33333333-3333-3333-3333-333333333333', 'user-c@example.test', null);
 
-insert into public.profiles (id, display_name) values
-  ('11111111-1111-1111-1111-111111111111', 'Usuário A'),
-  ('22222222-2222-2222-2222-222222222222', 'Usuário B');
+delete from public.profiles where id = '33333333-3333-3333-3333-333333333333';
 
 insert into public.books (id, title, author) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Livro 1', 'Autor 1'),

@@ -40,8 +40,17 @@ auth.users            (Supabase Auth: identidade, e-mail, senha)
 | `created_at`   | `timestamptz` | `not null`, default `now()`                   |
 | `updated_at`   | `timestamptz` | `not null`, default `now()`, trigger          |
 
-Não existe trigger que cria o profile no cadastro. Como e quando o
-profile é criado será decidido na Fase 06 (Autenticação).
+O profile é criado pelo trigger `users_create_profile` em `auth.users`
+(`decisions.md`, 008), na mesma transação do cadastro, com
+`display_name` vindo de `raw_user_meta_data.display_name`:
+
+- espaços nas extremidades são removidos;
+- o nome é truncado em 80 caracteres;
+- vazio ou ausente vira `null`.
+
+Depois disso, `profiles.display_name` é a fonte de verdade; a metadata do
+Auth não é sincronizada. A função `create_profile_for_new_user()` é
+`security definer` e nenhum papel da API pode executá-la.
 
 ### `books`
 
@@ -207,11 +216,14 @@ socket do Docker Desktop (`unix://$HOME/.docker/run/docker.sock`).
 
 `supabase/tests/rls_test.sql` cobre o isolamento entre usuários e o
 acesso anônimo; `supabase/tests/schema_test.sql` cobre constraints,
-foreign keys, `updated_at`, RLS ativo e o conjunto exato de policies.
+foreign keys, `updated_at`, RLS ativo e o conjunto exato de policies;
+`supabase/tests/profile_trigger_test.sql` cobre a criação do profile e
+os privilégios da função do trigger.
 
-Última validação (2026-09-30, Fase 05A): Supabase CLI 2.119.0,
-PostgreSQL 17.11 local; `start` e `db reset` aplicaram a migration do
-zero e `test db` passou com 38/38 testes (21 de RLS, 17 de schema).
+Última validação (2026-10-02, Fase 06B): Supabase CLI 2.119.0,
+PostgreSQL 17.11 local; `db reset` aplicou as migrations do zero e
+`test db` passou com 54/54 testes (16 do trigger, 21 de RLS, 17 de
+schema).
 
 ### Projeto remoto
 
@@ -242,6 +254,30 @@ leitura (catálogo do Postgres via `npx supabase db query --linked` e
 RLS, policies, grants e triggers conferem com a migration. Os testes
 pgTAP não são executados no remoto.
 
+A migration `20261002160116_create_profile_on_signup.sql` (Fase 06B) foi
+aplicada no remoto em 2026-10-05 (`db push`, após `--dry-run`). Trigger,
+função (`security definer`, sem `EXECUTE` para os papéis da API) e
+policies foram conferidos no catálogo, sem inserir dados.
+
+## Supabase Auth
+
+Configuração não sensível (remoto conferido com `npx supabase config
+diff`, somente leitura):
+
+| Item | Remoto | Local (`config.toml`) |
+| --- | --- | --- |
+| Cadastro por e-mail e senha | ativo | ativo |
+| Confirmação de e-mail | ativa | ativa |
+| Senha mínima | 6 caracteres | 6 caracteres |
+| Site URL | `http://localhost:3000` | `http://localhost:3000` |
+| Redirect URLs | nenhuma | nenhuma |
+| Template de confirmação | igual a `supabase/templates/confirmation.html`, configurado no Dashboard (o `config diff` compara só o assunto; o corpo foi validado por e-mail real) | `supabase/templates/confirmation.html` (`token_hash`) |
+| SMTP | personalizado (Gmail SMTP, provisório) | Mailpit (local) |
+
+O fluxo de confirmação está em `decisions.md` (008 e 009). Ficam
+pendentes a Site URL de produção e um SMTP definitivo com domínio
+próprio.
+
 ## Acesso pelo Next.js
 
 O website acessa o banco somente pelos clientes de `src/lib/supabase/`
@@ -249,7 +285,9 @@ O website acessa o banco somente pelos clientes de `src/lib/supabase/`
 
 - `client.ts`: Client Components;
 - `server.ts`: Server Components, Server Functions e Route Handlers
-  (um cliente por request, sessão lida dos cookies).
+  (um cliente por request, sessão lida dos cookies);
+- `proxy.ts`: usado por `src/proxy.ts` para renovar a sessão em cada
+  request (`decisions.md`, 009).
 
 Nenhum código do website usa a secret key ou a `service_role`.
 

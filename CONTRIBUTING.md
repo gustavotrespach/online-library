@@ -12,10 +12,14 @@ Guia para desenvolvedores humanos. Agentes de IA devem seguir o
 
 ``` bash
 npm install
+cp .env.example .env.local   # e preencha com os valores do Supabase
 npm run dev
 ```
 
-O website fica disponível em <http://localhost:3000>.
+O website fica disponível em <http://localhost:3000>. Use `localhost`, e
+não `127.0.0.1`: os cookies de sessão e os links de confirmação do Auth
+dependem desse host. Sem as variáveis do `.env.local`, as páginas não
+respondem. Detalhes do banco e do Auth: `docs/banco-de-dados.md`.
 
 ## Scripts
 

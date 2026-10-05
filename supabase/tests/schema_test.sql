@@ -5,11 +5,9 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(17);
 
+-- O profile é criado pelo trigger de auth.users.
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'user-a@example.test');
-
-insert into public.profiles (id) values
-  ('11111111-1111-1111-1111-111111111111');
 
 insert into public.books (id, title, author) values
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Livro 1', 'Autor 1'),

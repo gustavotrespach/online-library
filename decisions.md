@@ -416,3 +416,217 @@ precisa de tipos que correspondam ao schema da Fase 05A.
   `src/types/database.ts` (comando em `docs/banco-de-dados.md`).
 - Aliases de domínio (ex.: status derivado de `progress`) devem ser
   criados quando houver código que os use, a partir dos tipos gerados.
+
+------------------------------------------------------------------------
+
+## 008 — Autenticação: profile por trigger e confirmação por `token_hash`
+
+**Data:** 2026-10-02 · **Fase:** 06B — Supabase Auth (planejamento e preparação)
+
+> Atualizada pela decisão 009: o host local foi alinhado a `localhost` e
+> o template de confirmação local foi configurado.
+
+### Contexto
+
+A auditoria da Fase 06A levantou as decisões necessárias antes do Auth
+básico (e-mail e senha). O Auth remoto exige confirmação de e-mail, então
+o `signUp` não devolve sessão, e o link de confirmação pode ser aberto em
+outro navegador ou dispositivo.
+
+### Decisão
+
+**Profile e nome**
+
+- O profile é criado pelo trigger `users_create_profile` (`after insert`
+  em `auth.users`), que chama `public.create_profile_for_new_user()`:
+  `security definer`, `search_path` vazio, sem `EXECUTE` para `public`,
+  `anon`, `authenticated` e `service_role`. Um erro no trigger faz o
+  cadastro falhar: não existe usuário sem profile.
+- O nome é **obrigatório** no cadastro e vai em
+  `signUp({ options: { data: { display_name } } })`. A chave
+  `display_name` é a única lida. O trigger remove espaços nas
+  extremidades, trunca em 80 caracteres e grava `null` se sobrar vazio.
+- Depois do cadastro, a fonte de verdade é `profiles.display_name`. A
+  metadata do Auth é só o transporte inicial: não é sincronizada, não é
+  usada na interface e nunca serve para autorização.
+
+**Configuração**
+
+- Confirmação de e-mail ativa no remoto e no `supabase/config.toml`
+  (`auth.email.enable_confirmations = true`).
+- Senha: mínimo de 6 caracteres, o mesmo do remoto, sem política extra.
+
+**Rotas e confirmação**
+
+- Rotas do Auth básico: `/entrar`, `/cadastrar` e `/auth/confirm`.
+- O link do e-mail de confirmação usa `token_hash`. Template de
+  confirmação:
+  `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+- `/auth/confirm` é um Route Handler (GET) que cria o server client e
+  chama `supabase.auth.verifyOtp({ token_hash, type })`, com
+  `type: "email"`. Em caso de sucesso, a sessão é gravada nos cookies
+  pelo `setAll`, e o handler redireciona para `/`.
+- Como o link é montado a partir do `SiteURL`, o fluxo não depende de
+  `emailRedirectTo` nem da lista de Redirect URLs.
+
+**Sessão e autorização**
+
+- `src/proxy.ts` só renova e sincroniza a sessão; não protege rotas na
+  Fase 06.
+- Cada Server Function ou Route Handler sensível verifica a autenticação
+  com `getClaims()` (JWT ES256 validado localmente) ou `getUser()`
+  (consulta o Auth). Nunca `getSession()` no servidor.
+- A Navbar lê o estado de Auth no cliente, para a Home continuar
+  estática.
+- Autenticação (quem é o usuário) é do Supabase Auth. Autorização (o que
+  ele pode acessar) é do RLS. Metadata, estado da Navbar e dados
+  enviados pelo navegador nunca autorizam nada.
+
+### Motivo
+
+- O trigger cria o profile na mesma transação do usuário,
+  independentemente de sessão, confirmação, navegador ou fluxo de
+  cadastro.
+- O `token_hash` não depende do code verifier do PKCE, que só existe no
+  navegador que fez o cadastro.
+
+Verificado em um stack local (GoTrue v2.197.0, a mesma versão registrada
+no remoto pelo `supabase link`), com o template acima e o `createServerClient` do `@supabase/ssr`
+sem cookies, simulando outro navegador:
+
+- `verifyOtp` criou a sessão e gravou o cookie `sb-<ref>-auth-token`;
+- o `getClaims()` do request seguinte retornou o usuário;
+- reusar o link ou usar um `token_hash` inválido resultou em
+  `otp_expired`.
+
+### Alternativas consideradas
+
+- **Profile criado pela aplicação:** sem sessão após o `signUp`, exigiria
+  criação tardia e permitiria usuário sem profile.
+- **Callback PKCE padrão (`exchangeCodeForSession`):** falha quando o
+  link é aberto em outro navegador ou dispositivo.
+- **Nome sincronizado entre metadata e `profiles`:** duas fontes de
+  verdade.
+
+### Consequências
+
+- O template de confirmação precisa ser configurado no remoto
+  (Dashboard) e no local (`config.toml` + arquivo do template) antes do
+  fluxo funcionar. Até lá, o template padrão envia um link
+  `/auth/v1/verify` incompatível com `/auth/confirm`.
+- O `SiteURL` define o domínio do link: o local usa
+  `http://127.0.0.1:3000`, e o remoto, `http://localhost:3000`. Cookies
+  de `127.0.0.1` não valem em `localhost`, então o desenvolvimento local
+  precisa usar o mesmo host do `SiteURL`.
+- Comportamentos observados no GoTrue v2.197.0, que a interface precisa
+  tratar:
+  - login antes da confirmação: erro `email_not_confirmed`;
+  - cadastro com e-mail já confirmado: erro `User already registered`;
+  - cadastro repetido com confirmação pendente: sem erro, com reenvio do
+    e-mail;
+  - senha abaixo do mínimo: erro `weak_password`;
+  - envios para o mesmo e-mail limitados por `max_frequency` (1 min no
+    remoto).
+- Segundo a documentação do Supabase, sem SMTP próprio o serviço de
+  e-mail padrão não atende usuários externos (não verificado neste
+  ambiente). Um SMTP próprio é requisito antes do uso real.
+- A função do trigger não aparece em `src/types/database.ts` (funções
+  `returns trigger` não são expostas), então os tipos não mudam.
+
+------------------------------------------------------------------------
+
+## 009 — Auth básico: formulários, estado na Navbar e confirmação
+
+**Data:** 2026-10-05 · **Fase:** 06C — Auth básico
+
+> Atualizada em 2026-10-05: o template remoto foi configurado e o fluxo
+> completo foi validado com um cadastro real no remoto (`tasks.md`, 06C).
+
+### Contexto
+
+A Fase 06C implementou cadastro, confirmação, login e logout seguindo a
+decisão 008. A implementação exigiu decisões sobre validação, estado de
+Auth no cliente, logout e tratamento de links inválidos.
+
+### Decisão
+
+**Formulários**
+
+- Validação com **Zod** (`src/lib/validation/auth.ts`), sem React Hook
+  Form: os formulários têm de 2 a 4 campos.
+- Os formulários chamam o browser client (`signUp`, `signInWithPassword`)
+  em Client Components, sem Server Actions. O próprio Auth valida de
+  novo no servidor.
+- Os erros do Auth são traduzidos por `error.code`
+  (`src/components/auth/authErrorMessage.ts`), nunca pelo texto da
+  mensagem.
+- Mínimo de senha (6) e limite do nome (80) ficam em constantes, iguais
+  ao Supabase e ao trigger.
+
+**Estado de Auth e Navbar**
+
+- Um único `AuthProvider` no layout raiz mantém um só
+  `onAuthStateChange` (com cleanup) e busca `profiles.display_name` sob
+  RLS. A `AccountActions` (Desktop e Mobile) apenas consome o contexto.
+- Enquanto a sessão é lida, a área da conta fica reservada e vazia, sem
+  mostrar "Entrar" a quem já está autenticado.
+- A Home continua estática: o servidor não lê cookies para montar a
+  Navbar.
+
+**Logout**
+
+- Botão "Sair" que chama `signOut({ scope: "local" })`: um POST ao Auth
+  que encerra só a sessão deste navegador.
+- Não existe rota GET de logout.
+
+**Confirmação e redirects**
+
+- Link inválido, expirado, já usado ou sem parâmetros leva a
+  `/entrar?erro=link-invalido`, com um aviso. O Auth responde
+  `otp_expired` nos três primeiros casos, então a interface não os
+  distingue.
+- Não há parâmetro `next`: login e confirmação sempre levam a `/`, o que
+  elimina open redirects nesta fase.
+
+**Rotas e proxy**
+
+- `/entrar` e `/cadastrar` ficam no grupo `src/app/(auth)/`, que
+  compartilha o layout sem alterar as URLs.
+- `/entrar` é renderizada sob demanda porque lê `?erro=`; `/cadastrar` e
+  `/` continuam estáticas.
+- `src/proxy.ts` usa `updateSession` (`src/lib/supabase/proxy.ts`) em
+  todas as rotas, exceto assets estáticos, e só renova a sessão.
+
+**Ambiente local**
+
+- O host local é `http://localhost:3000`, igual ao Site URL do remoto.
+- A lista local de Redirect URLs ficou vazia, como no remoto.
+
+### Motivo
+
+- Validar no cliente dá retorno imediato. As regras que importam
+  continuam no servidor (Auth e trigger).
+- Um único listener evita requisições e estados duplicados entre a
+  Navbar desktop e o menu mobile.
+- Sem `next`, não há destino controlado pela URL a validar.
+
+### Alternativas consideradas
+
+- **Server Actions para login e cadastro:** exigiriam sincronizar a
+  Navbar manualmente, porque os cookies mudariam fora do browser client.
+- **React Hook Form:** desnecessário para formulários tão pequenos.
+- **Logout global:** encerraria a sessão em todos os dispositivos sem o
+  usuário pedir.
+
+### Consequências
+
+- O browser client usa PKCE, então o `token_hash` do e-mail vem com o
+  prefixo `pkce_`. O `verifyOtp({ token_hash, type: "email" })` aceita
+  esse formato e cria a sessão sem o code verifier, também em outro
+  navegador (verificado em E2E). O cookie
+  `sb-<ref>-auth-token-code-verifier` criado no cadastro fica sem uso.
+- Todas as rotas passam pelo proxy, que exige as variáveis do Supabase:
+  sem `.env.local`, o website não responde.
+- O template remoto de confirmação precisa ser igual a
+  `supabase/templates/confirmation.html`. Até lá, o e-mail do remoto
+  usa o link padrão `/auth/v1/verify`, incompatível com `/auth/confirm`.

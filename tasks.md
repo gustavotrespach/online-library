@@ -142,10 +142,64 @@ Observações:
 
 ## Fase 06 — Autenticação
 
-- [ ] `src/components/auth/` com Supabase Auth
-- [ ] Substituir os placeholders de `AccountActions` por destinos reais e pelo menu do usuário autenticado
-- [ ] Definir e implementar a criação do `profile` (trigger ou fluxo da aplicação)
-- [ ] `proxy.ts` para renovar a sessão nos cookies (`decisions.md`, 007)
+### 06A — Auditoria ✅
+
+- [x] Auditoria do código, do Auth remoto (somente leitura) e do banco; decisões levantadas para a 06B
+
+### 06B — Decisões e preparação ✅
+
+- [x] Decisões do Auth básico registradas (`decisions.md`, 008)
+- [x] `auth.email.enable_confirmations = true` no `supabase/config.toml`, alinhado ao remoto
+- [x] Migration `20261002160116_create_profile_on_signup.sql`: trigger `users_create_profile` e função `create_profile_for_new_user()`
+- [x] Testes: `profile_trigger_test.sql` (16) e ajuste de `rls_test.sql`/`schema_test.sql` para profiles criados pelo trigger; 54/54 passando no stack local
+- [x] Fluxo de confirmação por `token_hash` verificado em stack local: `verifyOtp` sem cookies, sessão gravada via `setAll` e `getClaims()` no request seguinte
+- [x] Checks: `typecheck`, `lint` e `build`
+
+Observações:
+
+- A validação local usou um stack temporário fora do repositório (cópia
+  do `config.toml` com outras portas), porque as portas padrão estavam
+  ocupadas pelo stack de outro projeto.
+- Um teste que inseria usuários como `supabase_auth_admin` foi
+  descartado: o papel `postgres` local não pode assumi-lo. O disparo do
+  trigger pelo papel do Auth foi verificado por um `signUp` real na API
+  do Auth local.
+
+### 06C — Auth básico ✅
+
+- [x] Migration `20261002160116_create_profile_on_signup.sql` aplicada no remoto (`db push --dry-run`, depois `db push`); trigger, função e policies conferidos no catálogo
+- [x] Template de confirmação com `token_hash` no local (`supabase/templates/confirmation.html` + `config.toml`)
+- [x] Host local alinhado a `http://localhost:3000` (Site URL e Redirect URLs iguais ao remoto)
+- [x] `zod` como dependência direta (`decisions.md`, 009)
+- [x] `src/proxy.ts` + `src/lib/supabase/proxy.ts`: renovação da sessão via `getClaims()`, sem proteção de rotas
+- [x] `/cadastrar`, `/entrar` (grupo `src/app/(auth)/`) e `/auth/confirm` (Route Handler com `verifyOtp`)
+- [x] `src/components/auth/`: `AuthProvider`, formulários, campos e mensagens de erro por `error.code`
+- [x] `AccountActions` com estados de carregamento, visitante e autenticado (iniciais, `display_name` e Sair); o menu mobile fecha ao navegar ou sair
+- [x] Checks: `typecheck`, `lint`, `build` (`/` e `/cadastrar` estáticas) e pgTAP 54/54
+- [x] E2E no Chrome contra stack local (70/70), em 1440, 1024 e 390px: cadastro, validações, confirmação (inclusive em outro navegador e com link reutilizado, inválido, expirado ou sem parâmetros), login, logout, persistência após reload e ao reabrir o navegador, RLS via API, envio duplo, erro de rede e open redirect
+- [x] Renovação de JWT expirado pelo proxy verificada sem JavaScript
+- [x] SMTP personalizado configurado no remoto (Gmail SMTP, remetente "Online Library")
+- [x] Template "Confirm signup" do remoto configurado manualmente no Dashboard, igual a `supabase/templates/confirmation.html`; validado pelo e-mail real recebido (o CLI não compara o corpo do template)
+- [x] Verificação remota real (2026-10-05):
+  - cadastro sem sessão e profile criado pelo trigger;
+  - e-mail via SMTP com link `/auth/confirm?token_hash=…&type=email`;
+  - confirmação em navegador sem cookies;
+  - sessão, reload, reabertura do navegador e logout por POST;
+  - erros: link reutilizado, inválido ou sem parâmetros, e-mail inválido, senha incorreta e credenciais inexistentes;
+  - login posterior;
+  - RLS via API (11 verificações)
+- [x] Usuário de teste removido do remoto; `auth.users`, `profiles`, identities, sessions, `books` e `user_books` zerados, sem órfãos
+
+Pendências:
+
+- [ ] Infraestrutura de testes da aplicação (etapa "Testes"): o E2E desta fase rodou fora do repositório
+- [ ] `npm audit`: 5 vulnerabilidades altas na cadeia de lint (`eslint-config-next` → `fast-glob` → `micromatch`/`braces`), anteriores a esta fase
+- [ ] Melhoria de UX: logo após o login, a Navbar ainda mostra "Entrar" por uma fração de segundo enquanto o `display_name` é buscado
+
+Antes do uso por usuários externos:
+
+- [ ] SMTP definitivo: o Gmail SMTP atual é provisório e pode ser substituído por um serviço transacional (ex.: Resend) com domínio próprio
+- [ ] Site URL de produção (quando o domínio existir)
 
 ## Fase 07 — My Library
 

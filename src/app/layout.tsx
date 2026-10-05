@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond, Inter } from "next/font/google";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 import { Navbar } from "@/components/navbar/Navbar";
 import "./globals.css";
 
@@ -31,8 +32,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${cormorantGaramond.variable}`}
     >
       <body className="antialiased">
-        <Navbar />
-        {children}
+        <AuthProvider>
+          <Navbar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

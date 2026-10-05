@@ -106,7 +106,11 @@ export function MobileMenu() {
             </ul>
           </nav>
 
-          <AccountActions layout="stacked" className="pb-12 md:max-w-sm" />
+          <AccountActions
+            layout="stacked"
+            onNavigate={closeMenu}
+            className="pb-12 md:max-w-sm"
+          />
         </div>
       </dialog>
     </>
