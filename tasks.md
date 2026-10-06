@@ -203,18 +203,86 @@ Antes do uso por usuários externos:
 
 ## Fase 07 — My Library
 
-- [ ] `src/components/library/`, `bookshelf/`, `book/`
-- [ ] Preencher o `href` de My Library em `navigation.ts`; seção com `scroll-margin-top` para o header fixo
-- [ ] Substituir o conteúdo provisório da seção após o Hero (`page.tsx`), mantendo o início em `black`
-- [ ] Rolagem suave pontual até a seção (sem `scroll-behavior` global)
+### 07A — Protótipo visual da estante
+
+Protótipo com dados fictícios, para validar o conceito antes da
+implementação real. Sem Supabase, sem APIs de livros, sem CRUD e sem
+alterações no banco.
+
+- [x] Rota temporária `/preview/bookshelf` (sem link na navegação, `noindex`), a remover quando a estante real existir
+- [x] `src/components/bookshelf/`: layout puro (`bookshelf-layout.ts`), animações GSAP (`bookshelf-motion.ts`), `Bookshelf`, `Shelf`, `Book`, `Ornament`, `Cobweb`, dados fictícios e controles do protótipo (`BookshelfPreview`)
+- [x] Prateleiras flutuantes: capacidade calculada pela largura disponível, livros da esquerda para a direita e de cima para baixo, prateleira nova quando necessário
+- [x] Largura do livro por páginas (escala logarítmica, 80–1000 páginas, com mínimo e máximo); capa com proporção 2:3
+- [x] Progresso na capa: a parte não lida fica em escala de cinza (0% cinza, 100% colorida)
+- [x] Ornamentos em posições fixas por prateleira, com área reservada no layout e balanço sutil no hover
+- [x] Teias de aranha na estante vazia, que somem com o primeiro livro
+- [x] Animações GSAP: entrada, saída, reordenação (FLIP, os mesmos nós DOM deslizam), prateleira entrando e saindo, altura da estante
+- [x] Reduced motion: tudo vai direto ao estado final, sem hover nos ornamentos
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`
+- [x] Verificação no Chrome (fora do repositório) em 390, 768, 1024 e 1440px: sem overflow, sem sobreposição, ornamentos fixos, animações, reduced motion e Home/Navbar intactas
+- [x] Refinamento após a avaliação visual: 9 tipos de ornamento (planta, escultura, vaso, pote de porcelana, vasinhos, castiçal, ampulheta, globo e porta-retrato) em SVG com tokens do design system
+- [x] Distribuição determinística por prateleira (pseudoaleatória com seed fixo, sem `Math.random()`): prateleiras sem ornamento, um objeto ou um par; à esquerda, à direita ou mais ao centro quando cabem livros dos dois lados; tipos em ciclos embaralhados, sem repetição em sequência
+- [x] Composição por faixa: no mobile menos ornamentos, menores, sem pares nem centro
+- [x] Ornamentos renderizados dentro da prateleira: entram e saem junto com ela; a área continua reservada antes de posicionar os livros
+- [x] Teias presas sob as tábuas, perto das pontas (nenhuma, pequena, maior ou maior + pequena na ponta oposta), sem tocar ornamentos da prateleira de baixo; teias de outra composição (resize) assumem o estado atual sem animar
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`; E2E no Chrome (fora do repositório) em 390, 768, 1024 e 1440px, com resize e reduced motion
+
+### 07B — Estante real
+
+- [x] Decisões da estante real registradas (`decisions.md`, 010)
+- [x] `src/types/book.ts` (`LibraryBook`) e `src/lib/books/user-books.ts`: `user_books` + livro embutido, sob RLS, sem `any`
+- [x] `src/components/library/LibrarySection.tsx`: estados carregando, visitante, vazia, com livros e erro (com "Tentar novamente"); visitante não consulta o banco
+- [x] Capas reais (`cover_url`) com fallback (título, autor e tom de encadernação estável); largura padrão sem `pages`; progresso na capa preservado
+- [x] Layout por intervalos ocupáveis (`getShelfIntervals`, `packBook`): regra única de encaixe para layout e drag, sem compressão, sem invadir ornamentos, ordem preservada
+- [x] Drag-and-drop com Pointer Events + GSAP (`createBookDrag.ts`): mouse, caneta e toque (pressão longa, sem bloquear a rolagem), rolagem automática nas bordas, Esc cancela
+- [x] Validação de drop (`findDropTarget`): só posições em que o livro cabe inteiro na prateleira apontada; fora da estante o livro volta ao lugar
+- [x] Livro segurado (elevação, inclinação, sombra), FLIP dos demais, marca discreta na tábua, assentamento e retorno físicos
+- [x] Teclado: livros focáveis, setas movem uma posição, instruções e anúncios para leitores de tela
+- [x] Ordem explícita (lista de ids), separada da posição física
+- [x] `/preview/bookshelf` usa o mesmo componente real com dados fictícios
+- [x] Home: seção My Library após o Hero, mantendo o início em `black`; `href` de My Library preenchido; `scroll-margin-top`; rolagem suave pontual (sem `scroll-behavior` global)
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`
+- [x] Verificação fora do repositório: testes puros do layout (casos A–G e propriedades) e E2E no Chrome contra um stack Supabase local temporário (visitante, vazio, loading, erro, RLS, capas, drag com mouse e toque, teclado, reduced motion, 390/768/1024/1440px, resize, navegação); regressão da 07A no preview
+
+Limitações e pendências:
+
+- [x] **Persistir a ordem**: resolvido na Fase 08 (`user_books.position`; `decisions.md`, 011)
+- [x] Adicionar e remover livros reais: Fase 08
+- [x] Capas das fontes externas com `remotePatterns` (Fase 08); URLs manuais seguem sem otimização
+- [ ] Validação visual final da estante real; depois, remover `/preview/bookshelf`
+- [ ] Testar em dispositivos reais (Safari/iOS e Android): o toque foi verificado com eventos sintéticos no Chrome headless
+- [ ] A estante não foi verificada com usuário autenticado no projeto remoto (sem livros e sem permissão de escrita em `books`); a verificação usou o stack local
 
 ## Fase 08 — Gerenciamento de Livros
 
-- [ ] `src/components/book-modal/` e `src/lib/books/`
-- [ ] Modal com `<dialog>` nativo, seguindo o padrão de `MobileMenu.tsx` (`decisions.md`, 003)
-- [ ] Definir como `books` é escrito e revisar grants/policies (hoje somente leitura; `decisions.md`, 006)
-- [ ] Identificador externo do livro e estratégia de deduplicação de edições
-- [ ] Bucket e policies de Storage para capas personalizadas, por migration
+### 08 — Adicionar livros, remover e ordem persistida
+
+- [x] Decisões registradas (`decisions.md`, 011) e `docs/integracoes.md` criado
+- [x] Migration `20261006184007_add_library_order_and_book_sources.sql`:
+  - `user_books.position` (`not null`, única por usuário, `deferrable`), preenchida pela ordem de adição; trigger `user_books_set_position` (fim da estante, lock por usuário)
+  - `books.source`/`source_id` (identificador externo), `isbn` único em ISBN-13, `cover_url` somente HTTPS
+  - `add_book_to_library` (`security definer`: validação, catálogo por ISBN/origem, sem duplicar na estante) e `set_library_order` (`security invoker`, sob RLS); `anon` sem execução
+- [x] Testes pgTAP: `library_test.sql` (36); suíte local com 90/90
+- [x] Migration aplicada no remoto (`db push --dry-run`, depois `db push`); catálogo conferido somente leitura; `src/types/database.ts` regenerado com `--linked`
+- [x] Validação remota do fluxo das RPCs em bloco desfeito (`raise exception` no fim): livro novo, duplicata por ISBN, livro manual, ordem, progresso 0 e escrita direta em `books` bloqueada; contagens de `books`, `user_books`, `profiles` e `auth.users` conferidas em 0 depois
+- [x] `src/lib/books/`: `isbn.ts` (ISBN-13 canônico), `google-books.ts`, `open-library.ts`, `book-search.ts` (fallback), `book-sources.ts` (servidor), `catalog.ts` (cliente), `cover-hosts.ts`, `normalize.ts`; `user-books.ts` com ordem por `position`, adicionar, remover e salvar a ordem
+- [x] Route Handlers autenticados: `GET /api/books/search` e `GET /api/books/details`
+- [x] Google Books somente com `GOOGLE_BOOKS_API_KEY` (servidor; sem chave a API responde 429); Open Library como fallback; `BOOKS_API_CONTACT` opcional no User-Agent; `.env.example` atualizado
+- [x] `src/types/book.ts`: `BookSearchResult` e `BookMetadata`; `src/lib/validation/book.ts` (Zod: busca, entrada manual, resposta da API)
+- [x] `src/components/book-modal/`: `ModalDialog` (`<dialog>` nativo), `AddBookDialog` (busca, resultados, revisão, salvando, duplicata, erros), `ManualBookForm`, `BookDetailsDialog` (remoção com confirmação), `CoverThumbnail`
+- [x] Estante: "Adicionar livro", clique/Enter abre o livro, drag não abre; ordem gravada ao soltar (fila de gravação; falha restaura a última ordem salva); remoção otimista que volta em caso de erro
+- [x] `next.config.ts`: `images.remotePatterns` só para `books.google.com/books/**` e `covers.openlibrary.org/b/**`
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`
+- [x] Verificação fora do repositório: 19 testes unitários (normalizadores, ISBN, fallback, validação, hosts), contra os arquivos reais do repositório; E2E no Chrome contra o stack local com Open Library real (ordem persistida e reload, falha ao salvar, isolamento entre usuários, adicionar, duplicata, duplo clique, manual, erros de API e banco, remoção com e sem falha, capas, foco, 390/768px); E2E da 07B e regressão da 07A
+
+Pendências:
+
+- [ ] Configurar `GOOGLE_BOOKS_API_KEY` (e `BOOKS_API_CONTACT`) em `.env.local` e na Vercel; o caminho do Google Books foi verificado só por testes de normalização
+- [ ] Editar livro e atualizar progresso (`plan.md`, seções 23 e 26): o diálogo do livro ainda só mostra os dados e remove
+- [ ] Botão "+" por prateleira (`plan.md`, seção 20): esta fase usa um único "Adicionar livro" no cabeçalho da seção
+- [ ] Bucket e policies de Storage para capas personalizadas, por migration (upload de capa)
+- [ ] Fluxo completo no navegador contra o remoto: requer uma conta confirmada; a validação remota cobriu as RPCs diretamente no banco
+- [ ] Testes da aplicação no repositório (etapa "Testes"): unitários e E2E seguem fora do repositório
 
 ## Fase 09 — Reading Progress
 

@@ -6,6 +6,7 @@ export interface NavigationItem {
 
 export const navigationItems: NavigationItem[] = [
   { label: "Home", href: "/" },
-  { label: "My Library", href: null },
+  // Âncora da seção na Home (LIBRARY_SECTION_ID).
+  { label: "My Library", href: "/#my-library" },
   { label: "Reading Progress", href: null },
 ];

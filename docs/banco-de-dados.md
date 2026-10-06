@@ -59,23 +59,30 @@ Auth não é sincronizada. A função `create_profile_for_new_user()` é
 | `id`               | `uuid`        | PK, default `gen_random_uuid()`         |
 | `title`            | `text`        | obrigatório, não vazio                  |
 | `author`           | `text`        | obrigatório, não vazio                  |
-| `cover_url`        | `text`        | opcional                                |
-| `isbn`             | `text`        | opcional, **sem** `unique`              |
+| `cover_url`        | `text`        | opcional, somente `https://`            |
+| `isbn`             | `text`        | opcional, `unique`, ISBN-13 (só dígitos) |
 | `pages`            | `integer`     | opcional, maior que 0                   |
 | `publication_year` | `integer`     | opcional                                |
+| `source`           | `text`        | opcional: `google_books` ou `open_library` |
+| `source_id`        | `text`        | opcional; obrigatório com `source`      |
 | `created_at`       | `timestamptz` | `not null`, default `now()`             |
 | `updated_at`       | `timestamptz` | `not null`, default `now()`, trigger    |
 
 - O mesmo registro de `books` pode estar na biblioteca de vários
   usuários.
-- `isbn` não é único: edições diferentes de uma obra têm identificadores
-  diferentes, nem toda fonte fornece ISBN, e a estratégia de
-  normalização de edições ainda não foi definida.
+- `isbn` identifica a edição e é único. É guardado sempre como ISBN-13,
+  só dígitos: um ISBN-10 é convertido para o ISBN-13 equivalente antes de
+  chegar ao banco (`docs/integracoes.md`). Edições diferentes de uma obra
+  têm ISBNs diferentes e são livros diferentes.
+- `source` + `source_id` identificam o livro na fonte externa de onde veio
+  (id do volume no Google Books; edição `OL…M` ou obra `OL…W` no Open
+  Library) e são únicos em par. Livros adicionados manualmente não têm
+  origem (`decisions.md`, 011).
+- Título e autor nunca identificam um livro: dois registros podem ter o
+  mesmo título.
 - `publication_year` não tem faixa válida: qualquer limite seria uma
   regra de negócio ainda não definida.
-- O identificador externo (Google Books/Open Library) citado no
-  `plan.md` (seção 17) ainda não existe; ele entra com a integração
-  (Fase 08), junto com a estratégia de deduplicação.
+- `cover_url` guarda a URL da capa escolhida, sem cópia no Storage.
 
 ### `user_books`
 
@@ -85,6 +92,7 @@ Auth não é sincronizada. A função `create_profile_for_new_user()` é
 | `user_id`     | `uuid`        | `not null`; FK → `auth.users.id`, `on delete cascade`  |
 | `book_id`     | `uuid`        | `not null`; FK → `books.id`, `on delete restrict`      |
 | `progress`    | `smallint`    | `not null`, default `0`, entre 0 e 100                 |
+| `position`    | `integer`     | `not null`, ≥ 0, única por usuário; ordem da estante   |
 | `started_at`  | `timestamptz` | opcional                                               |
 | `finished_at` | `timestamptz` | opcional                                               |
 | `feedback`    | `text`        | opcional, até 5000 caracteres                          |
@@ -93,6 +101,20 @@ Auth não é sincronizada. A função `create_profile_for_new_user()` é
 
 `unique (user_id, book_id)`: um usuário não adiciona o mesmo registro de
 livro duas vezes.
+
+**Ordem da estante.** `position` define a ordem dos livros na estante de
+cada usuário (`decisions.md`, 011):
+
+- `unique (user_id, position)` é `deferrable initially immediate`: a
+  unicidade é verificada no fim de cada comando, para que uma
+  reordenação troque posições de uma só vez.
+- Inserção sem `position`: o trigger `user_books_set_position` coloca o
+  livro no fim da estante do usuário (maior posição + 1), com um lock por
+  usuário (`pg_advisory_xact_lock`) contra inserções simultâneas.
+- Remover um livro deixa um buraco na sequência; só a ordem relativa
+  importa.
+- Registros anteriores à migration receberam posições pela ordem de
+  adição (`created_at`, `id`).
 
 **Status de leitura.** Não existe `status` nem `is_read`. O status é
 derivado de `progress`, que é a fonte de verdade:
@@ -135,10 +157,14 @@ estar na biblioteca de outras pessoas.
 
 ## Índices
 
-Além das chaves primárias, existe somente o índice da constraint
-`unique (user_id, book_id)`. Como `user_id` é a primeira coluna, ele
-também atende às consultas da biblioteca e às policies (`user_id =
-auth.uid()`).
+Além das chaves primárias, existem somente os índices das constraints
+únicas:
+
+- `user_books (user_id, book_id)`: atende às policies (`user_id =
+  auth.uid()`) e à verificação de duplicata;
+- `user_books (user_id, position)`: atende à ordenação da estante;
+- `books (isbn)` e `books (source, source_id)`: atendem à busca do livro
+  no catálogo antes de criá-lo.
 
 Não há índice em `user_books.book_id`. Ele só seria usado ao remover um
 livro (verificação do `restrict`) ou ao consultar quem possui um livro,
@@ -175,13 +201,25 @@ consulta):
 - Visitantes anônimos não acessam nenhuma das tabelas.
 - Não há policy de `delete` em `profiles`: o profile é removido junto com
   o usuário.
-- **Escrita em `books` está fechada** para usuários: não há grant nem
-  policy de `insert`/`update`/`delete`. A forma de criar e atualizar
-  livros será definida com a integração Google Books/Open Library
-  (Fase 08). Até lá, só o `service_role` (que ignora RLS e nunca vai ao
-  navegador) consegue escrever.
+- **Escrita direta em `books` está fechada** para usuários: não há grant
+  nem policy de `insert`/`update`/`delete`. Livros entram no catálogo só
+  pela função `add_book_to_library` (abaixo).
 - Profiles públicos, visibilidade entre amigos e busca de usuários não
   existem nesta fase.
+
+## Funções
+
+| Função | Segurança | Quem executa | O que faz |
+| ------ | --------- | ------------ | --------- |
+| `add_book_to_library(p_title, p_author, p_cover_url, p_pages, p_publication_year, p_isbn, p_source, p_source_id)` | `security definer`, `search_path` vazio | `authenticated` | Valida os dados, reutiliza o livro do catálogo (por ISBN ou origem) ou o cria, e adiciona à estante de `auth.uid()` com progresso 0, no fim. Devolve `user_book_id` e `already_in_library` |
+| `set_library_order(p_user_book_ids uuid[])` | `security invoker` (sob RLS), `strict` | `authenticated` | Grava a ordem da estante: os ids recebidos ocupam as posições 0, 1, 2…; os demais livros do usuário vão para o fim |
+| `set_user_book_position()` | trigger, como quem insere | nenhum papel da API | Posição padrão de livros novos |
+
+- `anon` não executa nenhuma das funções.
+- `add_book_to_library` nunca recebe o dono como parâmetro: usa sempre
+  `auth.uid()`. Erros de validação usam o SQLSTATE `22023`.
+- Nenhuma policy nova: `set_library_order` só altera linhas que o RLS de
+  `user_books` permite ao usuário atualizar.
 
 ## Storage
 
@@ -214,16 +252,22 @@ Se o CLI não encontrar o Docker Desktop, ative o socket padrão do
 Docker (Settings → Advanced) ou exporte `DOCKER_HOST` apontando para o
 socket do Docker Desktop (`unix://$HOME/.docker/run/docker.sock`).
 
+`supabase/tests/library_test.sql` cobre a posição (trigger, unicidade,
+troca em um comando), `set_library_order` (inclusive com ids de outro
+usuário), o isolamento da posição entre usuários e `add_book_to_library`
+(validação, duplicatas, reaproveitamento do catálogo, permissões);
 `supabase/tests/rls_test.sql` cobre o isolamento entre usuários e o
 acesso anônimo; `supabase/tests/schema_test.sql` cobre constraints,
 foreign keys, `updated_at`, RLS ativo e o conjunto exato de policies;
 `supabase/tests/profile_trigger_test.sql` cobre a criação do profile e
 os privilégios da função do trigger.
 
-Última validação (2026-10-02, Fase 06B): Supabase CLI 2.119.0,
-PostgreSQL 17.11 local; `db reset` aplicou as migrations do zero e
-`test db` passou com 54/54 testes (16 do trigger, 21 de RLS, 17 de
-schema).
+Última validação (2026-10-06, Fase 08): Supabase CLI 2.119.0,
+PostgreSQL 17.11 local; `db reset` aplicou as três migrations do zero e
+`test db` passou com 90/90 testes (36 da estante, 16 do trigger, 21 de
+RLS, 17 de schema). O preenchimento de `position` em registros
+existentes foi verificado aplicando a migration sobre dados das fases
+anteriores.
 
 ### Projeto remoto
 
@@ -259,6 +303,16 @@ aplicada no remoto em 2026-10-05 (`db push`, após `--dry-run`). Trigger,
 função (`security definer`, sem `EXECUTE` para os papéis da API) e
 policies foram conferidos no catálogo, sem inserir dados.
 
+A migration `20261006184007_add_library_order_and_book_sources.sql`
+(Fase 08) foi aplicada no remoto em 2026-10-06 (`db push`, após
+`--dry-run`; as tabelas estavam vazias). Colunas, constraints, trigger,
+funções (segurança, `search_path` vazio, `EXECUTE` só para
+`authenticated`), grants de `books` e as 8 policies foram conferidos no
+catálogo. O fluxo das funções foi exercitado no remoto dentro de um
+bloco PL/pgSQL encerrado por `raise exception`, que desfaz tudo; depois
+dele, `books`, `user_books`, `profiles` e `auth.users` continuaram com 0
+linhas.
+
 ## Supabase Auth
 
 Configuração não sensível (remoto conferido com `npx supabase config
@@ -291,6 +345,19 @@ O website acessa o banco somente pelos clientes de `src/lib/supabase/`
 
 Nenhum código do website usa a secret key ou a `service_role`.
 
+A estante (My Library) usa o browser client, somente para usuários
+autenticados (`src/lib/books/user-books.ts`):
+
+- leitura: `user_books` com o livro embutido, ordenado por `position`
+  (depois `created_at`, `id`); o RLS devolve apenas as linhas do próprio
+  usuário;
+- adicionar: `rpc("add_book_to_library")`;
+- reordenar: `rpc("set_library_order")`, uma chamada por drop;
+- remover: `delete` em `user_books` (sob RLS).
+
+As buscas externas (Google Books, Open Library) não tocam o banco; ver
+`docs/integracoes.md`.
+
 ## Variáveis de ambiente
 
 Documentadas em `.env.example`; os valores locais ficam em `.env.local`,
@@ -303,6 +370,10 @@ ignorado pelo Git.
 
 Nunca versionar nem expor ao navegador: senha do banco, secret key,
 `service_role` key ou qualquer outra credencial privada.
+
+As variáveis das fontes de livros (`GOOGLE_BOOKS_API_KEY`,
+`BOOKS_API_CONTACT`), somente do servidor, estão em
+`docs/integracoes.md`.
 
 ## Tipos TypeScript
 

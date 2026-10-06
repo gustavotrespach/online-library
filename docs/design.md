@@ -164,6 +164,51 @@ mudança de superfície (`background` → `background-secondary` →
 - Nenhum texto ou efeito é sobreposto à cena; conteúdo essencial não
   depende do vídeo.
 
+## Estante (My Library)
+
+- Prateleiras flutuantes, livros com largura pelo número de páginas e
+  capa em escala de cinza na parte ainda não lida (a cor sobe da base).
+  Ornamentos e teias seguem a composição determinística aprovada na 07A.
+- Capa ausente ou que não carregou: fallback com título e autor sobre um
+  tom de encadernação estável por livro (cores de conteúdo, não tokens).
+- Estados: carregando (prateleiras sem livros e mensagem discreta que só
+  aparece após 0,5s), visitante (convite para entrar ou criar conta),
+  vazia (teias) e erro (mensagem e "Tentar novamente"). Só a estante
+  vazia mostra teias.
+- Drag-and-drop: o livro pego sobe 8px, inclina 2,5° e cresce 4%, com
+  sombra maior; os outros abrem espaço e uma linha fina em `accent` marca
+  na tábua onde ele vai assentar. Fora da estante não há marca, e o
+  livro volta ao lugar ao ser solto.
+- Toque: pressão longa para pegar o livro; deslizar sem pressionar rola
+  a página. Teclado: setas para a esquerda e para a direita.
+- Com reduced motion, o drag continua funcionando, mas sem elevação
+  animada nem deslizamento dos outros livros.
+- Clique ou Enter em um livro abre os detalhes dele (com "Remover da
+  estante", que pede confirmação). Soltar um livro depois do drag nunca
+  abre os detalhes.
+- "Adicionar livro" fica ao lado do título da seção, para usuários
+  autenticados (inclusive com a estante vazia). Avisos de sucesso ou
+  falha (adicionar, remover, salvar a ordem) aparecem em uma linha
+  discreta abaixo da descrição.
+
+## Diálogos de livros
+
+- Diálogo centralizado (`max-w-xl`), com cabeçalho fixo (título e
+  fechar) e corpo rolável; no mobile ocupa a largura com 16px de margem e
+  nunca passa da altura da tela (`dvh`, que acompanha o teclado virtual).
+- Adicionar livro: busca (campo + "Buscar"), lista de resultados com capa
+  pequena (44px), título, autor, páginas e ano, e "Selecionar"; revisão
+  com capa maior, páginas, ano e ISBN, e "Adicionar à biblioteca". "Não
+  encontrou? Adicionar manualmente" leva ao formulário manual.
+- Um único padrão visual para todos os estados (buscando, sem
+  resultados, erro, salvando, duplicata): uma linha de texto em
+  `foreground-muted` e alertas em `surface`, como nos formulários de
+  autenticação.
+- O foco acompanha as etapas: campo de busca ao abrir e ao voltar, título
+  do livro na revisão, campo título na entrada manual. Ao fechar, o foco
+  volta a quem abriu (ou ao "Adicionar livro", se o livro saiu da
+  estante).
+
 ## Ícones
 
 Lucide React é a única biblioteca de ícones. Convenção:

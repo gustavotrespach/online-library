@@ -294,6 +294,9 @@ fora de `public/`, e não é mais usado.
 
 **Data:** 2026-09-30 · **Fase:** 05A — Supabase Database Foundation
 
+> Atualizada pela decisão 011: a escrita em `books` passou a ser feita pela
+> função `add_book_to_library`, e `isbn` passou a ser único (ISBN-13).
+
 ### Contexto
 
 A biblioteca precisa guardar dados do livro (título, autor, capa…) e
@@ -630,3 +633,220 @@ Auth no cliente, logout e tratamento de links inválidos.
 - O template remoto de confirmação precisa ser igual a
   `supabase/templates/confirmation.html`. Até lá, o e-mail do remoto
   usa o link padrão `/auth/v1/verify`, incompatível com `/auth/confirm`.
+
+------------------------------------------------------------------------
+
+## 010 — Estante real: ordem na sessão, layout por intervalos e drag com Pointer Events
+
+**Data:** 2026-10-06 · **Fase:** 07B — Estante real
+
+> Atualizada pela decisão 011: a ordem passou a ser persistida em
+> `user_books.position`, e as capas conhecidas passaram pela otimização do
+> Next.js.
+
+### Contexto
+
+A estante aprovada no protótipo (07A) passou a mostrar os livros reais do
+usuário, com reordenação por drag-and-drop. O schema atual não tem campo
+de ordem, e a escrita em `books` continua fechada (006), então adicionar
+livros depende da Fase 08.
+
+### Decisão
+
+**Dados**
+
+- A seção My Library (`src/components/library/LibrarySection.tsx`) é um
+  Client Component: a Home continua estática, e o estado de Auth vem do
+  `AuthProvider` (009).
+- Visitantes não consultam nada. Usuários autenticados carregam
+  `user_books` com o livro embutido (`book:books(...)`) pelo browser
+  client, uma vez por usuário (`src/lib/books/user-books.ts`). O
+  isolamento é do RLS; não há filtro por `user_id` no navegador.
+- Tipo de domínio `LibraryBook` (`src/types/book.ts`), derivado dos tipos
+  gerados. A estante, o preview e a consulta usam o mesmo tipo.
+
+**Ordem**
+
+- `user_books` não tem coluna de ordem e nenhuma migration foi criada.
+  A ordem inicial é a de adição (`created_at`, depois `id`, só como
+  critério de exibição) e a reordenação vale **somente para a sessão**.
+- A ordem é uma lista explícita de ids, separada da posição física:
+  ordem → layout → animação. Persistir a ordem exige uma decisão de
+  schema (ex.: coluna de posição em `user_books`) e muda somente o
+  `moveBook` da seção.
+
+**Layout**
+
+- Cada prateleira é uma sequência de intervalos livres: a largura útil
+  menos a área reservada de cada ornamento (`getShelfIntervals`).
+- Uma única regra de encaixe (`packBook`): na ordem da coleção, cada
+  livro vai para o primeiro trecho em que cabe inteiro; se não couber na
+  sobra, tenta o próximo intervalo e depois a próxima prateleira. Livros
+  nunca são comprimidos nem invadem ornamentos, e a ordem nunca é trocada
+  para tapar buracos. A sobra fica no fim do intervalo, junto ao
+  ornamento ou à ponta da prateleira, e nunca entre dois livros.
+- O drag usa a mesma regra (`findDropTarget`): simula a inserção em cada
+  posição da ordem e só aceita as que deixam o livro inteiro na
+  prateleira apontada, escolhendo a mais próxima. Abaixo da última
+  prateleira ocupada, a posição válida é o fim da coleção; fora da
+  estante, nenhuma (o livro volta ao lugar).
+
+**Interação**
+
+- Pointer Events + GSAP, sem biblioteca de drag. Um controlador
+  imperativo (`createBookDrag.ts`) move o livro segurado fora do React e
+  só avisa a estante quando o destino muda; a estante então re-renderiza
+  a ordem de pré-visualização e anima os outros livros pelo FLIP já
+  existente.
+- Mouse e caneta: o drag começa após 4px de movimento. Toque: pressão
+  longa (320ms); antes disso, o gesto é rolagem da página
+  (`touch-action: pan-y`). Com o livro segurado, um `touchmove` não
+  passivo impede a rolagem; perto das bordas da janela a página rola
+  sozinha. Esc ou `pointercancel` devolvem o livro.
+- Alternativa por teclado: cada livro é um botão focável; as setas para
+  a esquerda e para a direita movem o livro uma posição, com anúncio em
+  `aria-live`.
+
+**Capas**
+
+- Capas externas usam `next/image` com `unoptimized`: os hosts das capas
+  (Google Books, Open Library, Storage) só serão definidos na Fase 08, e
+  a otimização exige a lista de `remotePatterns`. Capa ausente ou com
+  erro usa um fallback com título, autor e um tom de encadernação
+  estável por livro.
+
+### Motivo
+
+- Não há autorização para mudar o schema nesta fase, e usar `created_at`
+  ou `updated_at` como ordem distorceria campos com outro significado.
+- Uma regra de encaixe única garante que a posição prevista durante o
+  drag é exatamente a que o layout produz ao soltar.
+- Pointer Events cobrem mouse, toque e caneta; uma biblioteca de drag
+  traria um segundo modelo de layout (listas/grades) incompatível com
+  intervalos físicos.
+
+### Alternativas consideradas
+
+- **Migration com coluna de posição:** depende de autorização e de uma
+  estratégia de reindexação; adiada.
+- **Distribuir a sobra entre os livros (justificar a prateleira):**
+  reduziria buracos, mas mudaria o espaçamento aprovado na 07A.
+- **Preencher a sobra com um livro posterior menor:** trocaria a ordem
+  da coleção.
+- **dnd-kit ou similar:** dependência extra sem suporte a áreas
+  reservadas por ornamentos.
+
+### Consequências
+
+- Recarregar a página volta à ordem de adição até a ordem ser
+  persistida.
+- Adicionar e remover livros reais fica para a Fase 08; a estante já
+  anima entradas e saídas quando os dados mudam.
+- Ao definir os hosts das capas (Fase 08), trocar `unoptimized` por
+  `remotePatterns`.
+
+------------------------------------------------------------------------
+
+## 011 — Catálogo de livros: busca externa, escrita controlada e ordem persistida
+
+**Data:** 2026-10-06 · **Fase:** 08 — Adicionar e gerenciar livros
+
+### Contexto
+
+A estante precisava ser preenchida com livros reais. A escrita em `books`
+estava fechada (006), a ordem da estante valia só para a sessão (010) e o
+identificador externo e a deduplicação de edições estavam pendentes
+(`docs/banco-de-dados.md`).
+
+### Decisão
+
+**Ordem**
+
+- `user_books.position` (`integer`, `not null`, ≥ 0), única por usuário
+  (`unique (user_id, position)`, `deferrable initially immediate`, para
+  que uma reordenação troque posições em um único comando). A posição
+  pertence à relação usuário ↔ livro, nunca a `books`.
+- Registros existentes: posições pela ordem de adição (`created_at`,
+  `id`), por usuário.
+- Livro novo: o trigger `user_books_set_position` o põe no fim da estante
+  do usuário, com um lock por usuário contra inserções simultâneas.
+- Reordenação: `set_library_order(uuid[])`, `security invoker`. Grava a
+  ordem inteira em um comando, protegida pelo RLS de `user_books`; livros
+  fora da lista vão para o fim. A estante grava somente ao soltar o livro
+  (ou a cada tecla), uma gravação por vez e sempre a ordem mais recente.
+  Se a gravação falhar, volta à última ordem salva e avisa.
+
+**Escrita em `books`**
+
+- Os usuários continuam sem grant de escrita em `books`. O único caminho
+  é `add_book_to_library(...)`, `security definer` e `search_path` vazio,
+  que:
+  - usa sempre `auth.uid()` como dono;
+  - valida os dados de novo (título/autor até 300 caracteres, páginas
+    1–20000, ano até o ano seguinte, ISBN canônico, origem completa);
+  - reutiliza o livro do catálogo pelo ISBN ou pela origem externa, ou o
+    cria;
+  - adiciona o livro à estante com progresso 0, no fim. Se o livro já
+    estiver na estante, devolve `already_in_library` em vez de duplicar
+    (`unique (user_id, book_id)` continua sendo a última proteção).
+- `books.source` (`google_books` | `open_library`) e `books.source_id`,
+  únicos em par; livros manuais não têm origem.
+- `books.isbn` passa a ser único e sempre ISBN-13 (um ISBN-10 é
+  convertido antes de chegar ao banco). Título e autor nunca identificam
+  um livro.
+- `books.cover_url` exige HTTPS.
+- Remover da estante apaga só `user_books`. O livro fica no catálogo.
+
+**Fontes externas** (`docs/integracoes.md`)
+
+- Busca pelo servidor (Route Handlers autenticados), nunca direto do
+  navegador: chave e contato ficam no servidor, e a interface recebe só o
+  modelo normalizado.
+- Google Books primeiro, somente com `GOOGLE_BOOKS_API_KEY`: sem chave, a
+  API respondeu 429 (cota zero para chamadas anônimas). Open Library como
+  fallback, ou como fonte única sem a chave.
+- Detalhes da edição só ao selecionar um resultado.
+
+**Capas**
+
+- Guardadas como URL, sem download nem re-hospedagem nesta fase.
+- `images.remotePatterns` somente para `books.google.com/books/**` e
+  `covers.openlibrary.org/b/**`. URLs manuais (qualquer host) são
+  exibidas sem o otimizador, porque a alternativa seria um curinga.
+
+### Motivo
+
+- Uma função de escrita deixa a regra de deduplicação e a validação no
+  banco, em uma só chamada, sem abrir `books` para inserções arbitrárias.
+- `set_library_order` como `security invoker` mantém a reordenação sob o
+  RLS existente, sem policy nova.
+- ISBN canônico torna a deduplicação de edições confiável: a mesma edição
+  tem ISBN-10 e ISBN-13 equivalentes.
+- A chave do Google Books não pode ir ao navegador, e o Open Library pede
+  um User-Agent identificável, impossível de definir no navegador.
+
+### Alternativas consideradas
+
+- **Grant de `insert` em `books` com policy aberta:** deduplicação e
+  validação ficariam no cliente; qualquer usuário gravaria livros
+  arbitrários.
+- **Posição como `float`/fração (inserção entre vizinhos):** menos
+  escritas, mas exige rebalanceamento; a estante tem poucas centenas de
+  livros por usuário.
+- **Ordem por `created_at`/`updated_at`:** campos com outro significado.
+- **Chamar as APIs pelo navegador:** exporia a chave e impediria o
+  User-Agent.
+- **Re-hospedar capas no Storage:** mais controle e sem dependência
+  externa, mas exige bucket, policies e rotina de cópia; adiado.
+
+### Consequências
+
+- Com o ISBN único, uma entrada manual com o ISBN de um livro já
+  existente reutiliza o registro do catálogo (os dados digitados não
+  sobrescrevem o catálogo).
+- Livros sem ISBN e sem origem (manuais) criam um registro por adição.
+- Sem `GOOGLE_BOOKS_API_KEY`, todas as buscas usam o Open Library.
+- Os limites por IP das APIs são compartilhados entre os usuários, porque
+  as chamadas saem do servidor.
+- O tipo de retorno de `add_book_to_library` é genérico nos tipos gerados;
+  a resposta é validada com Zod em `src/lib/books/user-books.ts`.

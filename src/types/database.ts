@@ -23,6 +23,8 @@ export type Database = {
           isbn: string | null
           pages: number | null
           publication_year: number | null
+          source: string | null
+          source_id: string | null
           title: string
           updated_at: string
         }
@@ -34,6 +36,8 @@ export type Database = {
           isbn?: string | null
           pages?: number | null
           publication_year?: number | null
+          source?: string | null
+          source_id?: string | null
           title: string
           updated_at?: string
         }
@@ -45,6 +49,8 @@ export type Database = {
           isbn?: string | null
           pages?: number | null
           publication_year?: number | null
+          source?: string | null
+          source_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -81,6 +87,7 @@ export type Database = {
           feedback: string | null
           finished_at: string | null
           id: string
+          position: number
           progress: number
           started_at: string | null
           updated_at: string
@@ -92,6 +99,7 @@ export type Database = {
           feedback?: string | null
           finished_at?: string | null
           id?: string
+          position: number
           progress?: number
           started_at?: string | null
           updated_at?: string
@@ -103,6 +111,7 @@ export type Database = {
           feedback?: string | null
           finished_at?: string | null
           id?: string
+          position?: number
           progress?: number
           started_at?: string | null
           updated_at?: string
@@ -123,7 +132,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_book_to_library: {
+        Args: {
+          p_author: string
+          p_cover_url?: string
+          p_isbn?: string
+          p_pages?: number
+          p_publication_year?: number
+          p_source?: string
+          p_source_id?: string
+          p_title: string
+        }
+        Returns: Record<string, unknown>
+      }
+      set_library_order: {
+        Args: { p_user_book_ids: string[] }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
