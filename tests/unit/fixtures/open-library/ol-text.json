@@ -1,0 +1,75 @@
+{
+  "numFound": 91,
+  "start": 0,
+  "numFoundExact": true,
+  "num_found": 91,
+  "documentation_url": "https://openlibrary.org/dev/docs/api/search",
+  "q": "dom casmurro",
+  "offset": null,
+  "docs": [
+    {
+      "author_name": [
+        "Machado de Assis"
+      ],
+      "cover_i": 647501,
+      "first_publish_year": 1900,
+      "key": "/works/OL1003040W",
+      "number_of_pages_median": 268,
+      "title": "Dom Casmurro",
+      "editions": {
+        "numFound": 90,
+        "start": 0,
+        "numFoundExact": true,
+        "docs": [
+          {
+            "key": "/books/OL22170762M",
+            "title": "Dom Casmurro",
+            "cover_i": 6491476,
+            "language": [
+              "eng"
+            ],
+            "publish_year": [
+              1966
+            ],
+            "isbn": [
+              "0520007905",
+              "9780520007901"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "author_name": [
+        "Machado de Assís"
+      ],
+      "cover_i": 15231557,
+      "first_publish_year": 2013,
+      "key": "/works/OL39781935W",
+      "number_of_pages_median": 218,
+      "title": "Dom Casmurro",
+      "editions": {
+        "numFound": 6,
+        "start": 0,
+        "numFoundExact": true,
+        "docs": [
+          {
+            "key": "/books/OL56164313M",
+            "title": "Dom Casmurro",
+            "cover_i": 15231557,
+            "language": [
+              "por"
+            ],
+            "publish_year": [
+              2019
+            ],
+            "isbn": [
+              "9788508145607",
+              "8508145608"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

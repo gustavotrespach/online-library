@@ -135,6 +135,18 @@ Quando a fonte traz vários, o primeiro ISBN-13 válido tem prioridade.
   registro novo no catálogo.
 - Upload de capa (Supabase Storage) fica para uma etapa própria.
 
+## Testes
+
+- `tests/unit/books.test.mts` (`npm run test:unit`): normalizadores do
+  Google Books e da Open Library, ISBN, fallback entre as fontes,
+  validação e hosts de capa. Nenhuma chamada externa.
+- Google Books: fixtures sintéticas no formato documentado da API,
+  escritas no próprio teste.
+- Open Library: respostas reais de 2026-10-07 em
+  `tests/unit/fixtures/open-library/`, duas delas em recorte (a busca
+  por texto tem 2 dos 3 resultados originais); procedência e limites no
+  README da pasta.
+
 ## Limitações conhecidas
 
 - O Google Books só entra com `GOOGLE_BOOKS_API_KEY` configurada; o

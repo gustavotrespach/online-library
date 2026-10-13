@@ -283,7 +283,9 @@ Pendências:
 - [ ] Botão "+" por prateleira (`plan.md`, seção 20): esta fase usa um único "Adicionar livro" no cabeçalho da seção
 - [ ] Bucket e policies de Storage para capas personalizadas, por migration (upload de capa)
 - [ ] Fluxo completo no navegador contra o remoto: requer uma conta confirmada; a validação remota cobriu as RPCs diretamente no banco
-- [ ] Testes da aplicação no repositório (etapa "Testes"): unitários e E2E seguem fora do repositório
+- [x] Testes unitários da Fase 08 no repositório: `tests/unit/books.test.mts` (19 testes, `npm run test:unit`, sem rede), com as fixtures reais da Open Library em `tests/unit/fixtures/open-library/` (reconstruídas depois da perda do diretório temporário; `ol-text.json` tem 2 dos 3 resultados originais e `ol-edition.json` é um recorte; procedência no README da pasta)
+- [x] Testes unitários da 09B e do Reading Progress no repositório: `tests/unit/reading.test.mts` (7) e `tests/unit/reading-progress.test.mts` (23, data e fuso fixos), também em `npm run test:unit` (49 no total)
+- [ ] E2E no repositório (etapa "Testes"): os E2E de todas as fases seguem fora do repositório
 
 ## Fase 09A — Abertura do livro
 

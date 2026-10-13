@@ -1,0 +1,40 @@
+{
+  "numFound": 1,
+  "start": 0,
+  "numFoundExact": true,
+  "num_found": 1,
+  "documentation_url": "https://openlibrary.org/dev/docs/api/search",
+  "q": "",
+  "offset": null,
+  "docs": [
+    {
+      "author_name": [
+        "Fiódor Dostoievski"
+      ],
+      "cover_i": 9411873,
+      "first_publish_year": 1866,
+      "key": "/works/OL166894W",
+      "number_of_pages_median": 520,
+      "title": "Преступление и наказание",
+      "editions": {
+        "numFound": 2,
+        "start": 0,
+        "numFoundExact": true,
+        "docs": [
+          {
+            "key": "/books/OL7355481M",
+            "title": "Crime and Punishment (Penguin Classics)",
+            "cover_i": 9411862,
+            "publish_year": [
+              2003
+            ],
+            "isbn": [
+              "9780140449136",
+              "0140449132"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
