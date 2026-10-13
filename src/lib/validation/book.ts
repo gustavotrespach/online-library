@@ -87,3 +87,32 @@ export const bookSearchResultSchema = z.object({
   publicationYear: z.number().int().min(1).nullable(),
   isbn: z.string().regex(/^97[89]\d{10}$/).nullable(),
 });
+
+// Leitura no livro aberto (decisions.md, 013). O banco repete as regras.
+
+export const MAX_FEEDBACK_LENGTH = 5000;
+
+// Páginas lidas, digitadas como texto: inteiro de 0 até o total do livro.
+export function pagesReadSchema(pages: number) {
+  return z
+    .string()
+    .trim()
+    .regex(/^\d+$/, "Informe um número inteiro de páginas.")
+    .transform(Number)
+    .refine((n) => n <= pages, `As páginas lidas não podem passar de ${pages}.`);
+}
+
+// Porcentagem lida, para livros sem número de páginas.
+export const progressPercentSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+$/, "Use um número inteiro entre 0 e 100.")
+  .transform(Number)
+  .refine((n) => n <= 100, "Use um número inteiro entre 0 e 100.");
+
+// Feedback pessoal: aparado; vazio apaga (null).
+export const feedbackSchema = z
+  .string()
+  .trim()
+  .max(MAX_FEEDBACK_LENGTH, `Use no máximo ${MAX_FEEDBACK_LENGTH} caracteres.`)
+  .transform((value) => (value === "" ? null : value));

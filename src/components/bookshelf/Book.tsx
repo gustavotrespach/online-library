@@ -31,6 +31,8 @@ interface BookProps {
   // Livro saindo da estante: continua visível só durante a animação.
   exiting?: boolean;
   dragging?: boolean;
+  // Livro aberto na frente do usuário: o lugar dele na estante fica vazio.
+  open?: boolean;
   // Com os handlers, o livro é um botão que pode ser reordenado e aberto.
   instructionsId?: string;
   onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
@@ -44,6 +46,7 @@ export function Book({
   ref,
   exiting = false,
   dragging = false,
+  open = false,
   instructionsId,
   onPointerDown,
   onKeyDown,
@@ -54,7 +57,7 @@ export function Book({
   const { x, y, width, height } = placement;
   const interactive = !exiting && onPointerDown !== undefined;
 
-  const cover = <Cover book={book} width={width} progress={progress} />;
+  const cover = <BookCover book={book} width={width} progress={progress} />;
 
   return (
     <li
@@ -63,7 +66,8 @@ export function Book({
       aria-label={exiting || interactive ? undefined : label}
       data-book={book.id}
       data-dragging={dragging || undefined}
-      className="group absolute"
+      data-open={open || undefined}
+      className="group absolute data-open:invisible"
       style={{ left: x, top: y, width, height, zIndex: dragging ? 20 : undefined }}
     >
       {interactive ? (
@@ -71,6 +75,7 @@ export function Book({
           type="button"
           aria-label={label}
           aria-describedby={instructionsId}
+          aria-haspopup={onClick ? "dialog" : undefined}
           onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
           onClick={onClick}
@@ -86,7 +91,9 @@ export function Book({
   );
 }
 
-function Cover({ book, width, progress }: { book: LibraryBook; width: number; progress: number }) {
+// Capa com o progresso de leitura. Também é usada pelo livro aberto
+// (BookDetailsDialog), que precisa parecer o mesmo objeto da estante.
+export function BookCover({ book, width, progress }: { book: LibraryBook; width: number; progress: number }) {
   const { title, author, cover_url: coverUrl } = book.book;
   // A capa que falhou é lembrada pela URL: uma URL nova tenta de novo.
   const [failedUrl, setFailedUrl] = useState<string | null>(null);

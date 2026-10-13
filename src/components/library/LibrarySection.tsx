@@ -8,6 +8,7 @@ import { AddBookDialog } from "@/components/book-modal/AddBookDialog";
 import { BookDetailsDialog } from "@/components/book-modal/BookDetailsDialog";
 import { Bookshelf } from "@/components/bookshelf/Bookshelf";
 import { moveToIndex } from "@/components/bookshelf/bookshelf-order";
+import { ReadingProgressSection, type ReadingProgressState } from "@/components/reading-progress/ReadingProgressSection";
 import { fetchLibraryBooks, removeLibraryBook, saveLibraryOrder } from "@/lib/books/user-books";
 import { createClient } from "@/lib/supabase/client";
 import type { LibraryBook } from "@/types/book";
@@ -32,7 +33,8 @@ function reconcileOrder(saved: string[], current: string[]) {
   return [...kept, ...current.filter((id) => !keptSet.has(id))];
 }
 
-// Seção My Library da Home. Visitantes não consultam nada; usuários
+// Seção My Library da Home, seguida do Reading Progress, que é derivado dos
+// mesmos livros (decisions.md, 014). Visitantes não consultam nada; usuários
 // autenticados carregam os próprios livros sob o RLS de user_books.
 export function LibrarySection() {
   const auth = useAuth();
@@ -42,7 +44,8 @@ export function LibrarySection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [addDialogKey, setAddDialogKey] = useState(0);
-  const [openBookId, setOpenBookId] = useState<string | null>(null);
+  // Livro aberto e o elemento dele na estante (origem da animação).
+  const [opened, setOpened] = useState<{ id: string; origin: HTMLElement } | null>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   // Última ordem confirmada pelo banco e fila de gravação (uma por vez).
   const savedOrder = useRef<string[]>([]);
@@ -86,7 +89,7 @@ export function LibrarySection() {
   else if (current.status === "error") status = "error";
   else status = books.length === 0 ? "empty" : "ready";
 
-  const openBook = openBookId ? (books.find((b) => b.id === openBookId) ?? null) : null;
+  const openBook = opened ? (books.find((b) => b.id === opened.id) ?? null) : null;
 
   function updateReady(update: (previous: ReadyData) => ReadyData) {
     setData((previous) => (previous?.status === "ready" ? update(previous) : previous));
@@ -134,11 +137,20 @@ export function LibrarySection() {
     setNotice(`“${book.book.title}” foi adicionado à sua estante.`);
   }
 
+  // Leitura salva no livro aberto: só os dados desse livro mudam; a ordem e
+  // o layout da estante continuam os mesmos.
+  function updateBook(book: LibraryBook) {
+    updateReady((previous) => ({
+      ...previous,
+      books: previous.books.map((b) => (b.id === book.id ? book : b)),
+    }));
+  }
+
   // A estante anima a saída na hora; se o banco recusar, o livro volta.
   async function removeBook(book: LibraryBook) {
     if (!ready) return;
     const index = ready.order.indexOf(book.id);
-    setOpenBookId(null);
+    setOpened(null);
     setNotice(null);
     updateReady((previous) => ({ ...previous, order: previous.order.filter((id) => id !== book.id) }));
 
@@ -157,72 +169,80 @@ export function LibrarySection() {
   }
 
   const canAdd = status === "ready" || status === "empty";
+  const reading: ReadingProgressState =
+    status === "ready" || status === "empty" ? { status: "ready", books } : { status };
 
   return (
-    <section
-      id={LIBRARY_SECTION_ID}
-      aria-labelledby="my-library-title"
-      aria-busy={status === "loading"}
-      className="relative scroll-mt-16 pt-24 pb-24 md:scroll-mt-20 md:pt-32 md:pb-32"
-    >
-      <div className="page-container">
-        <div className="mx-auto max-w-6xl">
-          <p className="text-xs font-medium tracking-widest text-accent uppercase">My Library</p>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
-            <h2 id="my-library-title" className="text-4xl md:text-5xl">
-              Sua estante
-            </h2>
-            {canAdd && (
-              <button
-                ref={addButtonRef}
-                type="button"
-                onClick={() => {
-                  setNotice(null);
-                  setAddDialogKey((key) => key + 1);
-                  setAdding(true);
-                }}
-                className="flex h-12 items-center gap-2 rounded-sm border px-5 text-sm font-medium text-foreground transition-colors hover:border-foreground-subtle"
-              >
-                <Plus size={16} strokeWidth={1.5} />
-                Adicionar livro
-              </button>
-            )}
-          </div>
-          {/* Altura mínima fixa: a troca de mensagem não desloca a estante. */}
-          <div className="mt-4 min-h-14 max-w-xl text-base text-foreground-muted">
-            <LibraryMessage status={status} onRetry={() => setAttempt((n) => n + 1)} />
-            <p role="status" className={notice ? "mt-2 text-sm text-foreground" : "sr-only"}>
-              {notice}
-            </p>
-          </div>
+    <>
+      <section
+        id={LIBRARY_SECTION_ID}
+        aria-labelledby="my-library-title"
+        aria-busy={status === "loading"}
+        className="relative scroll-mt-16 pt-24 pb-24 md:scroll-mt-20 md:pt-32 md:pb-32"
+      >
+        <div className="page-container">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-medium tracking-widest text-accent uppercase">My Library</p>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+              <h2 id="my-library-title" className="text-4xl md:text-5xl">
+                Sua estante
+              </h2>
+              {canAdd && (
+                <button
+                  ref={addButtonRef}
+                  type="button"
+                  onClick={() => {
+                    setNotice(null);
+                    setAddDialogKey((key) => key + 1);
+                    setAdding(true);
+                  }}
+                  className="flex h-12 items-center gap-2 rounded-sm border px-5 text-sm font-medium text-foreground transition-colors hover:border-foreground-subtle"
+                >
+                  <Plus size={16} strokeWidth={1.5} />
+                  Adicionar livro
+                </button>
+              )}
+            </div>
+            {/* Altura mínima fixa: a troca de mensagem não desloca a estante. */}
+            <div className="mt-4 min-h-14 max-w-xl text-base text-foreground-muted">
+              <LibraryMessage status={status} onRetry={() => setAttempt((n) => n + 1)} />
+              <p role="status" className={notice ? "mt-2 text-sm text-foreground" : "sr-only"}>
+                {notice}
+              </p>
+            </div>
 
-          <div className="mt-12 md:mt-16">
-            <Bookshelf
-              books={books}
-              loaded={status !== "loading" && status !== "error"}
-              onMove={status === "ready" ? moveBook : undefined}
-              onOpen={status === "ready" ? setOpenBookId : undefined}
-            />
+            <div className="mt-12 md:mt-16">
+              <Bookshelf
+                books={books}
+                loaded={status !== "loading" && status !== "error"}
+                onMove={status === "ready" ? moveBook : undefined}
+                onOpen={status === "ready" ? (id, origin) => setOpened({ id, origin }) : undefined}
+                openBookId={openBook?.id}
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      {canAdd && (
-        <AddBookDialog
-          key={addDialogKey}
-          open={adding}
-          onClose={() => setAdding(false)}
-          onAdded={addBook}
+        {canAdd && (
+          <AddBookDialog
+            key={addDialogKey}
+            open={adding}
+            onClose={() => setAdding(false)}
+            onAdded={addBook}
+            fallbackFocusRef={addButtonRef}
+          />
+        )}
+        <BookDetailsDialog
+          book={openBook}
+          origin={opened?.origin ?? null}
+          onClose={() => setOpened(null)}
+          onRemove={(book) => void removeBook(book)}
+          onUpdate={updateBook}
           fallbackFocusRef={addButtonRef}
         />
-      )}
-      <BookDetailsDialog
-        book={openBook}
-        onClose={() => setOpenBookId(null)}
-        onRemove={(book) => void removeBook(book)}
-        fallbackFocusRef={addButtonRef}
-      />
-    </section>
+      </section>
+      <ReadingProgressSection state={reading} onRetry={() => setAttempt((n) => n + 1)} />
+    </>
   );
 }
 

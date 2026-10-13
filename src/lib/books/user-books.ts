@@ -6,7 +6,7 @@ import type { Database } from "@/types/database";
 type Client = SupabaseClient<Database>;
 
 const LIBRARY_BOOK_COLUMNS =
-  "id, user_id, book_id, progress, book:books(title, author, cover_url, pages, publication_year, isbn)";
+  "id, user_id, book_id, progress, pages_read, feedback, finished_at, book:books(title, author, cover_url, pages, publication_year, isbn)";
 
 // Livros da biblioteca do usuário autenticado, na ordem da estante
 // (user_books.position; decisions.md, 011). O RLS de user_books só devolve as
@@ -73,6 +73,26 @@ export async function removeLibraryBook(supabase: Client, id: string): Promise<v
   const { error, count } = await supabase.from("user_books").delete({ count: "exact" }).eq("id", id);
   if (error) throw error;
   if (count === 0) throw new Error("Livro não encontrado na estante.");
+}
+
+// O que o livro aberto grava: páginas lidas (livro com páginas) ou progresso
+// (livro sem páginas), e o feedback.
+export type ReadingChanges = Partial<Pick<LibraryBook, "pages_read" | "progress" | "feedback">>;
+
+// Grava a leitura em uma única atualização, sob o RLS de user_books (só as
+// linhas do próprio usuário). O trigger sync_user_book_reading valida as
+// páginas, deriva o progresso, cuida das datas e normaliza o feedback; a
+// linha devolvida já traz os valores finais.
+export async function updateReading(supabase: Client, id: string, changes: ReadingChanges): Promise<LibraryBook> {
+  const { data, error } = await supabase
+    .from("user_books")
+    .update(changes)
+    .eq("id", id)
+    .select(LIBRARY_BOOK_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 // Grava a ordem da estante em uma única chamada (set_library_order).

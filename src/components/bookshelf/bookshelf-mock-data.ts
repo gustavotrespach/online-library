@@ -34,6 +34,9 @@ function toLibraryBook(data: MockBookData, id: string, bookId: string): LibraryB
     user_id: "preview",
     book_id: bookId,
     progress: data.progress,
+    pages_read: null,
+    feedback: null,
+    finished_at: null,
     book: {
       title: data.title,
       author: data.author,

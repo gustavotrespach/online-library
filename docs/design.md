@@ -50,7 +50,7 @@ decorativos só entram quando têm função.
 | `paper`                 | Cor de papel: páginas, detalhes inspirados em livros       |
 | `accent`                | Detalhe dourado/envelhecido, foco, seleção. Usar com moderação |
 | `border`                | Bordas discretas, quando realmente necessárias             |
-| `black`                 | Preto puro do fim do vídeo do Hero. Somente em transições ligadas ao vídeo (fade da seção seguinte, faixa escura do topo) |
+| `black`                 | Preto puro do fim do vídeo do Hero. Somente em transições ligadas ao vídeo (fade da seção seguinte, faixa escura do topo) e na atmosfera escura do Reading Progress |
 
 Uso nas classes: `bg-surface`, `text-foreground-muted`, `border-border`,
 `bg-paper text-background` etc. A paleta padrão do Tailwind foi removida
@@ -183,9 +183,9 @@ mudança de superfície (`background` → `background-secondary` →
   a página. Teclado: setas para a esquerda e para a direita.
 - Com reduced motion, o drag continua funcionando, mas sem elevação
   animada nem deslizamento dos outros livros.
-- Clique ou Enter em um livro abre os detalhes dele (com "Remover da
-  estante", que pede confirmação). Soltar um livro depois do drag nunca
-  abre os detalhes.
+- Clique, toque ou Enter em um livro abre o livro (ver "Livro aberto").
+  Soltar um livro depois do drag, a pressão longa e a rolagem nunca abrem
+  o livro.
 - "Adicionar livro" fica ao lado do título da seção, para usuários
   autenticados (inclusive com a estante vazia). Avisos de sucesso ou
   falha (adicionar, remover, salvar a ordem) aparecem em uma linha
@@ -208,6 +208,151 @@ mudança de superfície (`background` → `background-secondary` →
   do livro na revisão, campo título na entrada manual. Ao fechar, o foco
   volta a quem abriu (ou ao "Adicionar livro", se o livro saiu da
   estante).
+
+## Livro aberto
+
+- O próprio livro sai da estante: sobe um pouco e inclina, vem para o
+  centro ainda fechado e abre como um livro físico (a capa gira na
+  lombada). Aberto: capa à esquerda, com a mesma escala de cinza do
+  progresso; página de papel à direita com título, autor, páginas, ano e
+  ISBN (só os que existem), seguidos da leitura (progresso e feedback).
+- Fundo escurecido com discrição (`black/60`, sem blur): a estante
+  continua visível. O lugar do livro na estante fica vazio enquanto ele
+  está aberto.
+- Fechar (botão acima do canto do livro), Esc ou clique fora: o livro
+  fecha, volta e assenta no mesmo lugar. "Remover da estante" fica abaixo
+  do livro, com confirmação.
+- Com alterações não salvas, fechar pergunta antes, no mesmo lugar da
+  confirmação de remoção: "Você tem alterações não salvas." com "Salvar e
+  fechar", "Descartar" e "Cancelar". Esc com a pergunta aberta cancela a
+  pergunta (nunca fecha o livro descartando o rascunho).
+- Tamanho: a maior página que cabe na tela (até 400px de largura,
+  proporção 2:3), com espaço para os controles. Textos da página
+  acompanham a largura dela (unidades de container), com mínimo de 12px.
+- Reduced motion: abre e fecha direto, sem trajeto.
+
+### Leitura no livro aberto
+
+- **Progresso:** rótulo em caixa alta ("Progresso"), a porcentagem e uma
+  linha fina de tinta que acompanha o valor digitado (prévia), e um campo
+  numérico com "Salvar progresso". Livro com páginas: "Páginas lidas
+  [137] de 320". Livro sem páginas: "Porcentagem lida [43] %", sem total
+  inventado. A capa só muda depois de salvar.
+- **Seu feedback:** área de texto em papel, com o convite "Escreva o que
+  você achou deste livro…", contador discreto ("238 / 5000") e "Salvar
+  feedback". Apagar o texto e salvar remove o feedback.
+- **Estados:** uma linha fixa abaixo de cada parte, sem mudar a altura da
+  página: "Alterações não salvas", "Salvando…", "Progresso salvo" /
+  "Feedback salvo" (some depois de alguns segundos) ou o erro ("Não foi
+  possível salvar… Tente novamente."), sempre preservando o que foi
+  digitado. Sem toasts.
+- **Sobre papel:** campos com borda em tinta translúcida, botões em tinta
+  (`background`) com texto `paper`, foco com contorno na cor da tinta (o
+  dourado não tem contraste suficiente no papel). Campos com texto de
+  16px e alvos de 44px.
+- **Por tamanho de tela:** com página de pelo menos 300px (tablet e
+  desktop), progresso e feedback ficam na própria página da direita, que
+  rola por dentro quando o conteúdo passa da altura. Abaixo disso
+  (celulares), a página continua com os dados e a leitura atual, e os
+  controles vão para um cartão de papel abaixo do livro, na largura dele;
+  a coluna rola, e o livro começa abaixo da altura da Navbar. Na página
+  estreita, os dados viram duas linhas ("340 páginas · 2008" e "ISBN …")
+  para o ISBN caber inteiro.
+- Usa o `<dialog>` modal como os outros overlays, mas a entrada e a saída
+  são do GSAP (o trajeto do livro), não o fade dos modais.
+
+## Reading Progress
+
+Direção: uma jornada, não um painel de estatísticas. A seção é a única
+parte escura e contemplativa da Home depois da estante (`decisions.md`,
+015).
+
+- **Atmosfera e transição:** sem divisória nem tábua. Uma camada começa
+  ainda no respiro que fecha a estante e escurece aos poucos até `black` a
+  72% sobre `background` (cerca de 20rem depois). Por cima, uma luz quente
+  e baixa no horizonte (`accent` a 11%, gradiente radial) e um grão
+  quase imperceptível (ruído SVG a 7%, `soft-light`), para o preto não
+  parecer chapado. Nada disso é imagem.
+- **Cabeçalho:** eyebrow em `accent`; título serif grande em duas linhas,
+  "Sua evolução / de *leitura*" (só "leitura" em `accent`), de `text-5xl`
+  a `text-7xl`; um fio curto em `accent` e uma frase em
+  `foreground-muted` ("Cada livro concluído é um passo na sua jornada.";
+  visitante: convite para entrar ou criar conta).
+- **Números:** total ("livros concluídos / até agora") e ano atual
+  ("livros em / 2026", com o ano em `accent`), em serif `text-6xl`–`7xl`
+  com `lining-nums`, separados só por um fio vertical em `paper/15`. Sem
+  cards. Desktop: à direita do título; tablet e celular: abaixo da frase.
+- **Gráfico:** protagonista, na largura da seção (no desktop, menos uma
+  coluna de 12rem à direita para a referência). Mostra o total acumulado
+  de livros concluídos mês a mês (`decisions.md`, 016).
+  - Linha do usuário em `paper` (2px, segmentos retos, sem suavização que
+    altere os valores) com um brilho largo e suave por baixo; área quase
+    invisível sob ela. Começa no zero, no começo do primeiro mês, e passa
+    pelo total no fim de cada mês: sobe quando há conclusões e fica reta
+    nos meses sem elas. Nunca desce.
+  - Pontos pequenos em `paper` só nos meses com conclusões; de cada ponto,
+    uma haste pontilhada até a base. A base é um fio em `paper/15`, com uma
+    marca no começo de cada ano. Sem eixo Y, grade, legenda ou tooltip.
+  - O trecho acima da trajetória da referência fica dourado (`accent`
+    clareado pelo `paper`), recortado exatamente na linha tracejada; o
+    resto continua em `paper`. Os pontos acima dela também ficam dourados.
+  - Abaixo da base, duas linhas de rótulos: os meses (`text-xs`, no meio
+    de cada mês) e os anos (`text-sm`, na borda em que cada ano começa).
+    Mês e ano atuais em `accent`.
+- **Eixo de no mínimo 12 meses** (`decisions.md`, 017): com menos meses
+  de histórico, o eixo continua depois do mês atual até completar 12.
+  Nesses meses não há linha do usuário, pontos, dourado nem livro; os
+  rótulos de mês e ano ficam em `foreground-muted` a 40% e a marca do ano
+  na base em `paper/15`. Um mês do histórico sem conclusões tem a linha
+  reta sobre ele; um mês seguinte, nada além da referência.
+- **Referência:** uma trajetória acumulada (3,96 / 12 por mês, do zero na
+  origem até o fim do eixo), tracejada em `paper/35` no histórico e em
+  `paper/20` nos meses seguintes, mais discreta que a linha do usuário.
+  Desktop: rótulo à direita, na altura do fim da trajetória ("Referência", "4 livros por ano" em `accent`, "(Instituto
+  Pró-Livro, 2024)"). Tablet e celular: uma linha acima do gráfico. O
+  crédito completo (com a ressalva de livros lidos inteiros ou em parte)
+  fecha a seção em texto pequeno.
+- **Mês atual e livro:** ponto maior em dourado com halo fino e uma haste
+  dourada, no total atual. Sobre ele, um pequeno livro aberto em SVG
+  (páginas em `paper`, capa e lombada em `accent`, brilho quente muito
+  suave), desenhado nas mesmas coordenadas do ponto: acompanha o ponto em
+  qualquer largura.
+- **Escala:** o maior total (ou o fim da referência no eixo, se for maior) fica a
+  64px do topo, para o livro caber; o zero fica 14px acima da base. Todos
+  os meses têm a mesma largura (no máximo 140px; poucos meses ficam juntos
+  no centro). A área tem 256px de altura no celular, 288px no tablet e
+  320px no desktop, e o SVG é desenhado na largura real.
+- **Rótulos em tela estreita (determinístico pela largura de um mês):**
+  meses a cada 1, 2, 3 ou 6, alinhados ao calendário (a cada 3: jan, abr,
+  jul, out), o menor intervalo em que não encostam; estreito demais,
+  nenhum. O mês atual sempre aparece. Anos: o atual e o primeiro sempre,
+  os outros enquanto não encostam. A fonte não diminui; a lista acessível
+  tem todos os meses.
+- **Estados sem gráfico** (visitante, sem livros concluídos, erro,
+  carregando): o mesmo horizonte (um fio que se apaga para a direita), com
+  uma frase em serif e uma linha de apoio. Sem eixos, zeros ou dados de
+  exemplo. No visitante e no estado vazio, o livro descansa no começo do
+  horizonte, sem ponto, mês ou valor. Erro: mensagem discreta com "Tentar
+  novamente".
+- **Entrada (GSAP), uma vez por montagem:** quando a seção chega à tela,
+  a luz ambiente, o título, o fio e os números; quando o gráfico chega à
+  tela (pelo menos 0,9s depois do cabeçalho), a base, os meses e os anos
+  (em cascata de no máximo 0,3s, com qualquer número de meses), a
+  referência, a linha desenhada da esquerda para a direita (cada ponto
+  quando o traço chega nele), o dourado acima da referência, o destaque do
+  mês atual e, por último, o livro.
+- **Micro-movimento contínuo (GSAP), quase imperceptível:** o livro sobe e
+  desce 1,5px e, a cada cerca de 11s, vira uma página; o halo do mês atual
+  e o brilho do livro respiram; a luz ambiente pulsa devagar. A linha, os
+  pontos e os rótulos nunca se movem. Pausa fora da tela.
+- **Reduced motion:** sem entrada e sem micro-movimento; tudo já no estado
+  final.
+- **Acessibilidade:** o gráfico é uma `<figure>` com legenda e uma lista
+  para leitores de tela com todos os meses, inclusive os sem conclusões
+  ("Outubro de 2026 (mês atual): 10 livros concluídos acumulados."); o SVG
+  e os rótulos visuais são decorativos (`aria-hidden`). Acima da
+  referência é indicado pela posição em relação à linha tracejada e pela
+  lista, não só pela cor.
 
 ## Ícones
 
@@ -236,6 +381,6 @@ leitores de tela. Não recebem foco nem hover. Ver `decisions.md` (002).
 
 ## Texturas
 
-Texturas de papel, grão ou ruído ainda não são usadas. Se forem
-introduzidas em uma fase específica, devem ser extremamente sutis e
-nunca prejudicar a legibilidade.
+Só o Reading Progress usa textura: um grão de ruído SVG a 7% sobre o
+fundo escuro. Novas texturas devem ser igualmente sutis e nunca
+prejudicar a legibilidade.

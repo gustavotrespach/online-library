@@ -850,3 +850,501 @@ identificador externo e a deduplicação de edições estavam pendentes
   as chamadas saem do servidor.
 - O tipo de retorno de `add_book_to_library` é genérico nos tipos gerados;
   a resposta é validada com Zod em `src/lib/books/user-books.ts`.
+
+------------------------------------------------------------------------
+
+## 012 — Livro aberto: o próprio livro sai da estante, dentro do `<dialog>` nativo
+
+**Data:** 2026-10-06 · **Fase:** 09A — Abertura do livro
+
+### Contexto
+
+Clicar em um livro abria um diálogo comum com os dados (Fase 08). A
+interação pedida é física: o livro sai da prateleira, vem para a frente e
+abre diante do usuário, e no fechamento volta exatamente ao lugar dele.
+Ao mesmo tempo, o livro aberto precisa do comportamento modal (foco
+contido, estante inerte, Esc), e a estante não pode ser recalculada nem
+perder o drag-and-drop.
+
+### Decisão
+
+- O livro aberto é um **segundo elemento visual** (capa + miolo), dentro
+  do mesmo `<dialog>` nativo com `showModal()` (003). O livro da estante
+  continua no layout, só invisível enquanto o livro está aberto
+  (`openBookId` na estante): os outros livros não se movem e a posição
+  original é preservada.
+- **Continuidade (FLIP):** ao abrir, o retângulo do livro da estante
+  (`captureBookOrigin`) vira o transform inicial do livro aberto, que
+  parte exatamente de lá. O estado final é o layout do diálogo (livro
+  aberto no centro); ao fechar, o retângulo é lido de novo e o livro
+  volta para onde a estante está agora (ex.: depois de um resize).
+- **Representação:** CSS 3D, sem imagens de páginas. A capa gira na
+  lombada (`rotateY` até -180°) e a face interna dela vira a página da
+  esquerda, com a mesma capa (`BookCover`, inclusive a escala de cinza do
+  progresso e o fallback). A página da direita é papel (`paper`) com os
+  dados; bordas de páginas, dobra e sombras com gradientes.
+- **Animação:** GSAP, em etapas separadas (`open-book-motion.ts`): sair da
+  estante, vir para a frente, abrir; fechar e voltar. O fechamento parte
+  do estado atual, então interromper a abertura (Esc, fechar, clique fora)
+  é seguro. Reduced motion abre e fecha direto no estado final.
+- **Fechamento animado com `<dialog>`:** o Esc (`cancel`) só pede o
+  fechamento; o diálogo sai quando o livro está de volta. Se o navegador
+  fechar o diálogo à força (um segundo Esc), o livro volta sem animar.
+- **Foco:** vai para o título do livro aberto ao abrir e volta para o
+  livro na estante ao fechar (ou para "Adicionar livro", se ele foi
+  removido).
+- **Remover:** o livro fecha e volta para a estante, e então a remoção
+  segue como antes (saída animada da estante, restauração em caso de
+  falha).
+
+### Motivo
+
+- Um clone no `<dialog>` fica acima de tudo (top layer) sem mexer no
+  layout da estante, nos transforms do drag nem nos `overflow` dos
+  ancestrais; mover o próprio nó da estante exigiria tirá-lo do layout.
+- O `<dialog>` nativo já deixa a estante inerte: nenhum livro pode ser
+  arrastado ou clicado enquanto um livro está aberto, sem código extra no
+  drag.
+- CSS 3D cobre capa, páginas e profundidade sem dependências nem assets.
+
+### Alternativas consideradas
+
+- **Animar o próprio `<li>` da estante:** o livro teria de sair do layout
+  (reflow) e conviver com os transforms do FLIP e do drag.
+- **Modal comum com fade:** não dá a continuidade espacial pedida.
+- **Three.js ou biblioteca de flip de páginas:** dependência pesada para
+  um único objeto.
+- **Página da esquerda em papel, com a capa reduzida:** mais "real", mas a
+  capa deixaria de ser o lado esquerdo do livro aberto, como pedido.
+
+### Consequências
+
+- O livro aberto mostra a capa cerca de 3× maior que na estante: capas de
+  origem pequenas (ex.: miniatura `zoom=1` do Google Books) aparecem
+  suaves. Para não piscar, a imagem da estante (já carregada) fica por
+  baixo até a versão maior carregar.
+- Um livro aberto pede um commit da estante (o lugar dele fica vazio),
+  mas sem recalcular o layout nem animar outros livros.
+- A edição (progresso, dados) entra na página da direita em outra fase.
+
+------------------------------------------------------------------------
+
+## 013 — Leitura no livro aberto: páginas lidas, progresso derivado e regras no banco
+
+**Data:** 2026-10-06 · **Fase:** 09B — Edição do livro, progresso e feedback
+
+### Contexto
+
+O livro aberto (012) passou a registrar a leitura: progresso, páginas
+lidas e feedback pessoal. `user_books` já tinha `progress` (0–100, usado
+pela capa da estante), `started_at`, `finished_at` e `feedback` (até 5000
+caracteres), mas as datas nunca eram preenchidas. Informar a leitura em
+páginas ("137 de 320") é mais natural que em porcentagem, e a escrita
+direta em `user_books` (sob RLS) já é permitida pelos grants, então
+qualquer regra que só existisse no website poderia ser contornada.
+
+### Decisão
+
+**Modelo**
+
+- Nova coluna `user_books.pages_read` (`integer`, opcional, `>= 0`).
+- **Livro com páginas** (`books.pages` preenchido): `pages_read` é a
+  entrada do usuário e `progress` é derivado dela, inteiro de 0 a 100:
+  0 só sem nenhuma página lida, 100 só com todas, e entre 1 e 99 no meio
+  (arredondado; 1 página de 1000 já é "lendo", 999 de 1000 ainda não é
+  "concluído"). `progress` continua sendo o que a estante e o status usam.
+- **Livro sem páginas**: `pages_read` fica nulo e `progress` é informado
+  diretamente, em porcentagem. Não existe total fictício.
+- Não há dois valores independentes: um único trigger mantém os dois
+  coerentes.
+
+**Regras no banco** — trigger `user_books_sync_reading` (`before insert or
+update`, função `sync_user_book_reading()`, `security invoker`,
+`search_path` vazio, sem `EXECUTE` para os papéis da API). Vale para o
+website, para as funções existentes e para a escrita direta sob RLS:
+
+- `pages_read` acima de `books.pages`, ou informado para um livro sem
+  páginas, é recusado (SQLSTATE `22023`); negativo é recusado pela
+  constraint (`23514`).
+- Um `progress` gravado diretamente num livro com páginas vira as páginas
+  equivalentes (`round(pages × progress / 100)`), e o progresso é
+  recalculado a partir delas.
+- `started_at`: preenchido quando o progresso sai de 0 pela primeira vez;
+  nunca sobrescrito nem apagado (voltar a 0% mantém o início).
+- `finished_at`: preenchido ao chegar a 100%; limpo ao sair de 100%.
+- As datas só mudam junto com o progresso: o cliente não as define.
+- `feedback`: espaços nas pontas removidos; vazio vira `null`. Continua
+  privado: só o RLS existente de `user_books` dá acesso a ele.
+
+**Gravação**
+
+- Uma única atualização pelo browser client (`updateReading` em
+  `src/lib/books/user-books.ts`): `update … select` em `user_books`, sob o
+  RLS existente (só as linhas do próprio usuário), sem `user_id` vindo do
+  cliente. A resposta já traz os valores finais (progresso derivado,
+  feedback aparado), que atualizam o estado local da estante sem
+  recarregar a biblioteca.
+- Validação com Zod antes de enviar (`src/lib/validation/book.ts`:
+  páginas lidas, porcentagem, feedback); o banco repete as regras.
+- Salvamento explícito: "Salvar progresso" e "Salvar feedback", cada um
+  com o seu estado (não salvo, salvando, salvo, erro). "Salvar e fechar"
+  grava as duas partes na mesma atualização. Fechar com alterações não
+  salvas pergunta antes (Salvar e fechar, Descartar, Cancelar).
+
+**Registros existentes (migration)**
+
+- `pages_read = round(books.pages × progress / 100)` nos livros com
+  páginas; nulo nos demais. `progress` e `updated_at` não mudam.
+- Datas não são inventadas: livros que já estavam em 100% continuam sem
+  `finished_at` até a próxima mudança de progresso.
+
+### Motivo
+
+- Páginas são o que o usuário sabe informar com precisão; a porcentagem
+  derivada mantém compatíveis a capa da estante e o status.
+- Um trigger cobre todos os caminhos de escrita sem abrir mão do RLS nem
+  criar uma função `security definer`: o usuário já pode atualizar as
+  próprias linhas, e as regras precisam valer também nesse caso.
+- O RLS de `user_books` já é a autorização; um Route Handler ou Server
+  Action só repetiria a mesma escrita com um passo a mais.
+
+### Alternativas consideradas
+
+- **`progress` como fonte e páginas derivadas:** perde a informação exata
+  que o usuário digitou.
+- **`progress` como coluna gerada:** colunas geradas não podem ler
+  `books.pages`, que está em outra tabela.
+- **Função `update_reading` (RPC):** as regras ficariam fora da escrita
+  direta, que continua permitida; exigiria revogar grants de colunas.
+- **Route Handler ou Server Action:** sem ganho de segurança sobre o RLS,
+  com um request a mais.
+- **Autosave:** gravações frequentes e estado menos claro para o usuário;
+  o salvamento explícito foi o pedido.
+
+### Consequências
+
+- Em livros com poucas páginas, um progresso gravado diretamente se ajusta
+  ao valor possível em páginas (ex.: 50% de um livro de 3 páginas vira
+  2 páginas, 67%).
+- A contagem anual de livros concluídos (Reading Progress) deve usar
+  `finished_at` e tratar os livros concluídos antes desta migration, que
+  não têm data.
+- O trigger só consulta `books.pages` quando o progresso ou as páginas
+  mudam; reordenar a estante não paga esse custo.
+
+## 014 — Reading Progress: contagem anual derivada da estante
+
+**Data:** 2026-10-07 · **Fase:** Reading Progress (`plan.md`, seções 27–29)
+
+### Contexto
+
+A seção Reading Progress mostra quantos livros o usuário concluiu a cada
+ano, ao lado da referência estatística do `plan.md` (seção 28). Os dados já
+existem: `user_books.progress` (100 = concluído) e `finished_at`, mantido
+pelo trigger da Fase 09B (013). A estante, logo acima na Home, já carrega
+todas as linhas de `user_books` do usuário sob RLS e atualiza o estado
+local a cada leitura salva. Livros que já estavam em 100% antes da
+migration da 09B não têm `finished_at`, e nenhuma data foi inventada para
+eles.
+
+### Decisão
+
+**Fonte dos dados**
+
+- A seção é derivada dos livros que a estante já carregou (a mesma
+  consulta de `fetchLibraryBooks`, agora com `finished_at`), sem outra
+  consulta e sem tabela de histórico. `LibrarySection` renderiza a seção
+  logo depois da estante e passa os livros e o estado (carregando,
+  visitante, erro). Visitantes não consultam nada.
+- A transformação fica em `src/lib/books/reading-progress.ts`
+  (`summarizeReading`), uma função pura e testada.
+
+**Contagem**
+
+- Conta como concluído: `progress = 100`. Adicionar, ter feedback, ter
+  `started_at` ou páginas lidas não conta.
+- O ano é o de `finished_at` no fuso do navegador (o do usuário), assim
+  como o ano atual.
+- Anos exibidos: do primeiro ano com um livro concluído até o ano atual,
+  sem lacunas (um ano sem livros vale 0, que é um dado real). Sem nenhum
+  livro concluído com data, não há gráfico.
+- **Concluídos sem `finished_at`**: entram no total ("livros concluídos"),
+  mas em nenhum ano; a seção avisa quantos são. Nenhuma data é atribuída.
+- Ultrapassar a referência é estritamente acima dela (5 > 4; 4 não
+  ultrapassa).
+
+**Referência**
+
+- `READING_REFERENCE` em `reading-progress.ts` é o único lugar com o
+  valor: média de 3,96 livros por ano (Retratos da Leitura no Brasil,
+  Instituto Pró-Livro, edição de 2024), apresentada como 4. O crédito na
+  seção informa que o levantamento conta livros lidos inteiros ou em parte,
+  enquanto o gráfico do usuário conta só os concluídos. Sem link: nenhum
+  endereço da fonte foi definido.
+
+**Gráfico e animação**
+
+- SVG próprio, medido em pixels reais (`ResizeObserver`), sem biblioteca
+  de gráficos.
+- Entrada com GSAP disparada por um `IntersectionObserver`, uma vez por
+  montagem. Sem ScrollTrigger: a altura da estante muda (carregamento,
+  livros adicionados e removidos), e as posições do ScrollTrigger teriam de
+  ser recalculadas a cada mudança; a animação não acompanha o scroll.
+  Reduced motion mostra o estado final.
+
+### Motivo
+
+- Uma única fonte para a estante e para o gráfico: concluir um livro no
+  livro aberto atualiza a contagem na hora, sem reload, sem consulta extra
+  e sem risco das duas seções divergirem.
+- O RLS de `user_books` continua sendo a autorização; nada novo é exposto.
+- Um ano sem data inventada é mais honesto do que um gráfico "completo":
+  o total continua certo e o aviso explica a diferença.
+
+### Alternativas consideradas
+
+- **Consulta própria da seção (`progress = 100`):** dados duplicados no
+  navegador e uma segunda fonte que precisaria ser avisada a cada leitura
+  salva.
+- **Contexto compartilhado entre as duas seções:** mover o estado da
+  estante para um provider só para isso; mais código para o mesmo
+  resultado.
+- **Usar `updated_at` (ou `started_at`) para os concluídos sem data:**
+  inventaria um ano de conclusão.
+- **Excluir os concluídos sem data também do total:** esconderia livros
+  que o usuário de fato concluiu.
+- **Recharts, Chart.js ou D3:** uma dependência para uma linha, alguns
+  pontos e uma referência; o visual precisaria ser refeito de qualquer
+  forma.
+- **ScrollTrigger:** ver acima.
+
+### Consequências
+
+- A seção Reading Progress só existe dentro de `LibrarySection` (na Home).
+  Se ela for usada em outra página, o estado da estante precisará subir
+  para um componente comum.
+- O total pode ser maior do que a soma dos anos (livros sem data), sempre
+  com o aviso.
+- O Footer (próxima fase) deve ler a referência de `READING_REFERENCE`.
+
+## 015 — Reading Progress: atmosfera escura, livro como marcador e movimento contínuo
+
+**Data:** 2026-10-07 · **Fase:** Reading Progress (redesign visual)
+
+### Contexto
+
+A primeira versão da seção (014) continuava a estante: mesmo fundo, mesmo
+cabeçalho e uma tábua da estante como base do gráfico. Na revisão visual,
+ela pareceu um gráfico convencional. A direção pedida (com uma imagem de
+referência) é a de uma jornada: um ambiente mais escuro e
+cinematográfico, a linha branca como protagonista, pequenos detalhes
+dourados, o ano atual marcado por um livro aberto e uma seção que parece
+viva mesmo depois da entrada. Dados, contagem, referência e acessibilidade
+da 014 não mudam.
+
+### Decisão
+
+- **Transição pela atmosfera, não por um elemento:** a seção começa ainda
+  no respiro que fecha a estante e escurece aos poucos (`black` a 72% sobre
+  `background`), com uma luz quente baixa e um grão quase imperceptível,
+  tudo em CSS. A tábua da estante sai do gráfico.
+- **Livro como marcador:** um livro aberto em SVG próprio
+  (`ReadingBook.tsx`), dentro do mesmo SVG do gráfico e posicionado pelas
+  coordenadas do ponto do ano atual. Sem GIF, Lottie ou imagem externa.
+- **Duas entradas (GSAP, uma vez cada):** o cabeçalho quando a seção chega
+  à tela e o gráfico quando ele chega à tela, pelo menos 0,9s depois do
+  cabeçalho. Ambas por `IntersectionObserver`, como na 014.
+- **Movimento contínuo em GSAP:** uma timeline com repetição infinita (o
+  livro respira e vira uma página de tempos em tempos; o halo, o brilho
+  do livro e a luz ambiente pulsam), pausada quando a seção sai da tela e
+  não criada com reduced motion. Só esses elementos se movem; a linha, os
+  pontos e os anos ficam parados.
+
+### Motivo
+
+- A diferença entre "estante" e "jornada" vem da luz, não de uma borda ou
+  de um card; o gradiente evita a costura entre as duas seções.
+- Um marcador desenhado nas coordenadas do ponto não pode se desalinhar em
+  nenhuma largura, e o SVG segue os tokens de cor do projeto.
+- Com uma única entrada, a linha seria desenhada fora da tela enquanto o
+  cabeçalho ainda estivesse entrando.
+- Com o GSAP, a entrada e o movimento contínuo ficam no mesmo arquivo
+  (`reading-progress-motion.ts`), com transformações SVG confiáveis
+  (origem na lombada para virar a página) e pausa explícita fora da tela.
+
+### Alternativas consideradas
+
+- **Manter a tábua da estante como base:** continuidade literal, mas o
+  gráfico continuava parecendo parte da estante, não uma nova atmosfera.
+- **Imagem de fundo (montanhas, horizonte):** mais peso, mais um asset e
+  menos controle de contraste; a luz em gradiente basta.
+- **GIF, vídeo ou Lottie para o livro:** um asset ou uma dependência para
+  um ícone de 40px, sem os tokens de cor e sem reduced motion nativo.
+- **Animações CSS (`@keyframes`) para o movimento contínuo:** possíveis,
+  mas espalhariam o movimento entre CSS global e GSAP, e a pausa fora da
+  tela exigiria outro mecanismo.
+- **ScrollTrigger:** pelos mesmos motivos da 014.
+
+### Consequências
+
+- `black` passa a ser usado também na atmosfera do Reading Progress, e o
+  projeto ganha a sua primeira textura (`docs/design.md`).
+- Enquanto a seção está na tela (sem reduced motion), o ticker do GSAP
+  fica ativo para o movimento contínuo; fora dela, a timeline fica
+  pausada.
+- A seção é a última da Home por enquanto; o Footer (próxima fase) começa
+  sobre o fundo escuro dela.
+
+## 016 — Reading Progress: total acumulado mês a mês e referência como trajetória
+
+**Data:** 2026-10-13 · **Fase:** Reading Progress (escala do gráfico)
+
+### Contexto
+
+O gráfico da 014/015 mostrava quantos livros foram concluídos em cada ano.
+Com poucos anos e poucos livros, ele quase não muda: concluir um livro
+move um único ponto, e um ano novo começa no zero. O redesign visual da 015
+foi aprovado; a mudança pedida é só de escala e de leitura dos dados: a
+jornada ao longo dos meses, como total acumulado. A referência continua
+sendo a média anual de 3,96 livros (Retratos da Leitura no Brasil,
+Instituto Pró-Livro, 2024), apresentada como "4 livros por ano".
+
+### Decisão
+
+**Série**
+
+- `summarizeReading` devolve `months`: do mês do primeiro livro concluído
+  com data até o mês atual, sem lacunas. Cada mês tem os concluídos nele
+  (`finished`) e o total acumulado até o fim dele (`total`), que nunca
+  diminui; um mês sem conclusões repete o total anterior (a linha fica
+  reta).
+- Continua contando como concluído só `progress = 100`. O mês é o de
+  `finished_at` no fuso do navegador, como o ano era. Cada linha de
+  `user_books` conta uma vez.
+- O resumo não muda: total de concluídos (com os sem data) e concluídos no
+  ano atual (`plan.md`, seção 27).
+- **Concluídos sem `finished_at`**: como na 014, entram no total do resumo,
+  em nenhum mês e com o aviso. A linha acumulada conta só os datados.
+
+**Referência como trajetória**
+
+- A média anual vira uma trajetória acumulada: `surveyAverage / 12`
+  (0,33 livro) por mês, a partir do começo do primeiro mês da série. No
+  fim do mês *n* da série, a referência vale *n* × 3,96 / 12. É uma
+  conversão matemática da média anual, não uma estatística mensal da
+  pesquisa; o rótulo continua "4 livros por ano" e o crédito não muda.
+- Acima da referência continua sendo estritamente acima, agora comparando
+  os dois acumulados no mesmo mês. O dourado é recortado acima da
+  trajetória (inclinada), não de uma linha horizontal.
+
+**Gráfico**
+
+- A linha começa no zero, no começo do primeiro mês (a origem da
+  jornada, onde a trajetória da referência também começa), e passa pelo
+  total no fim de cada mês. Não é um mês inventado: antes da primeira
+  conclusão datada, o acumulado é zero.
+- Pontos só nos meses com conclusões, e o mês atual destacado com o livro;
+  uma série de anos não vira uma fileira de pontos.
+- Eixo: os meses no meio de cada intervalo e os anos na borda em que
+  começam, com uma marca discreta na base. Os rótulos visíveis dependem só
+  da largura de um mês (todos os meses, a cada 2, 3 ou 6, sempre alinhados
+  ao calendário, ou nenhum além do atual); o mês atual, o ano atual e o
+  primeiro ano têm prioridade. A lista para leitores de tela tem todos os
+  meses, inclusive os sem conclusões.
+
+**Dados**
+
+- Tudo continua derivado dos livros que a estante já carrega: nenhuma
+  consulta nova, nenhuma tabela de histórico, nenhuma migration.
+
+### Motivo
+
+- O acumulado mostra a jornada inteira e muda a cada livro concluído; a
+  linha só sobe ou fica parada, que é como uma jornada de leitura
+  acontece.
+- Comparar um acumulado com uma linha anual fixa não faria sentido; os
+  dois precisam estar na mesma escala de tempo.
+- Começar a trajetória no primeiro mês da série compara o usuário com a
+  média a partir de quando ele começou a registrar conclusões, não desde
+  uma data arbitrária.
+
+### Alternativas consideradas
+
+- **Livros concluídos por mês (sem acumular):** a maioria dos meses teria
+  0 ou 1, um gráfico em serra sem a ideia de jornada.
+- **Começar a série em janeiro do primeiro ano:** a referência acumularia
+  meses em que o usuário ainda não registrava leituras.
+- **Começar a série no mês anterior à primeira conclusão:** mostraria um
+  mês (e às vezes um ano) inteiro sem nada; a origem no começo do primeiro
+  mês tem o mesmo zero sem esse mês.
+- **Comparar com 4 em vez de 3,96 na trajetória:** o arredondamento é só
+  de apresentação; a conta usa a média registrada.
+- **Tabela de histórico mensal:** desnecessária; `finished_at` já
+  determina o mês de cada conclusão.
+
+### Consequências
+
+- `ReadingYear` sai; `ReadingMonth` e `summary.months` o substituem.
+- Quem conclui o primeiro livro começa acima da referência (1 contra
+  0,33); a trajetória o alcança em poucos meses sem novas conclusões.
+- Uma conclusão sem data continua fora da linha; se o livro for
+  desconcluído e concluído de novo, ele ganha a data da nova conclusão
+  (trigger da 09B).
+
+## 017 — Reading Progress: eixo de no mínimo 12 meses
+
+**Data:** 2026-10-13 · **Fase:** Reading Progress (escala do gráfico)
+
+### Contexto
+
+Na revisão visual da 016, a referência parecia mal posicionada, quase na
+base do gráfico. O cálculo e a geometria estavam corretos: como
+`finished_at` só existe desde a migration da 09B (outubro de 2026), as
+conclusões datadas de uma conta real são todas do mês atual. A série tem
+um mês, e a referência termina, corretamente, em 0,33 livro, enquanto o
+usuário já tem vários. Com tão pouco tempo no eixo, a trajetória de "4
+livros por ano" não tem espaço para aparecer.
+
+### Decisão
+
+- O eixo do gráfico tem `max(12, meses do histórico)` meses, a partir do
+  começo real da série. Os meses que completam o eixo vêm logo depois do
+  último mês do histórico (o atual) e existem só no gráfico
+  (`axisMonths` em `ReadingChart.tsx`); `summarizeReading` e
+  `summary.months` continuam só com o histórico.
+- Nesses meses seguintes não há linha do usuário, pontos, dourado ou
+  livro: a linha termina no mês atual, onde ficam o ponto, o halo e o
+  livro. Só a referência continua, com a mesma conta (`referenceAt`, a
+  fórmula da 016 extraída para uma função), mais apagada. Com 12
+  intervalos ela chega a 3,96.
+- Rótulos de meses e anos seguintes em `foreground-muted` a 40%, marca do
+  ano na base mais fraca. Um mês do histórico sem conclusões tem a linha
+  reta sobre ele e rótulo normal; um mês seguinte não tem linha e tem
+  rótulo apagado.
+- A escala vertical inclui o fim da referência no eixo.
+- A lista para leitores de tela continua só com os meses do histórico; a
+  legenda da figura diz até quando o eixo vai e que esses meses ainda não
+  aconteceram.
+
+### Motivo
+
+- A referência é anual; 12 meses é o menor eixo em que ela mostra o que
+  significa. Estender para a frente não inventa histórico, e começar antes
+  da primeira conclusão compararia o usuário com meses em que ele não
+  registrava leituras (016).
+- A mesma geometria para histórico e eixo garante que a referência, a
+  linha do usuário e o dourado continuem na mesma escala e origem.
+
+### Alternativas consideradas
+
+- **Manter o eixo só com o histórico:** correto, mas a referência fica
+  ilegível até a conta ter vários meses.
+- **Estender para trás (12 meses até o mês atual):** criaria meses
+  anteriores à primeira conclusão e mudaria a origem da referência.
+- **Projetar a linha do usuário:** seria uma previsão, não um registro.
+
+### Consequências
+
+- Com menos de 12 meses de histórico, o mês atual não fica na ponta
+  direita do gráfico; o livro continua nele.
+- Com 12 meses ou mais, o gráfico é o mesmo da 016.

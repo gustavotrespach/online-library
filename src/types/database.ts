@@ -87,6 +87,7 @@ export type Database = {
           feedback: string | null
           finished_at: string | null
           id: string
+          pages_read: number | null
           position: number
           progress: number
           started_at: string | null
@@ -99,6 +100,7 @@ export type Database = {
           feedback?: string | null
           finished_at?: string | null
           id?: string
+          pages_read?: number | null
           position: number
           progress?: number
           started_at?: string | null
@@ -111,6 +113,7 @@ export type Database = {
           feedback?: string | null
           finished_at?: string | null
           id?: string
+          pages_read?: number | null
           position?: number
           progress?: number
           started_at?: string | null

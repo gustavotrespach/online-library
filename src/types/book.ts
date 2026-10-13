@@ -1,9 +1,12 @@
 import type { Tables } from "./database";
 
-// Um livro na biblioteca do usuário: a entrada de user_books (progresso) com
-// os dados do livro relacionado. O status de leitura é derivado de progress
-// (docs/banco-de-dados.md).
-export type LibraryBook = Pick<Tables<"user_books">, "id" | "user_id" | "book_id" | "progress"> & {
+// Um livro na biblioteca do usuário: a entrada de user_books (leitura e
+// feedback) com os dados do livro relacionado. O status de leitura é derivado
+// de progress (docs/banco-de-dados.md).
+export type LibraryBook = Pick<
+  Tables<"user_books">,
+  "id" | "user_id" | "book_id" | "progress" | "pages_read" | "feedback" | "finished_at"
+> & {
   book: Pick<
     Tables<"books">,
     "title" | "author" | "cover_url" | "pages" | "publication_year" | "isbn"

@@ -66,14 +66,17 @@ interface BookshelfProps {
   // Nova posição de um livro na ordem (drag-and-drop ou teclado). Sem ela, os
   // livros não podem ser reordenados.
   onMove?: (bookId: string, toIndex: number) => void;
-  // Clique (ou Enter) em um livro.
-  onOpen?: (bookId: string) => void;
+  // Clique (ou Enter) em um livro. origin é o livro na estante, de onde o
+  // livro aberto sai e para onde volta.
+  onOpen?: (bookId: string, origin: HTMLElement) => void;
+  // Livro aberto: continua no layout, mas o lugar dele fica vazio.
+  openBookId?: string | null;
 }
 
 // React decide onde cada livro fica (layoutBookshelf); os effects abaixo só
 // animam a transição entre o layout anterior e o atual (bookshelf-motion). O
 // drag muda a ordem exibida, e o layout segue a mesma regra de sempre.
-export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfProps) {
+export function Bookshelf({ books, loaded = true, onMove, onOpen, openBookId = null }: BookshelfProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contextRef = useRef<gsap.Context | null>(null);
   const bookRefs = useRef(new Map<string, HTMLLIElement>());
@@ -104,16 +107,15 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
     return moveToIndex(books, from, drag.target.index);
   }, [books, drag]);
 
-  const shelfBooks = useMemo(
-    () => books.map((b) => ({ id: b.id, pages: b.book.pages })),
-    [books],
-  );
+  const shelfBooks = useMemo(() => toShelfItems(books), [books]);
+  // O layout depende só da ordem e das páginas: mudar o progresso de um livro
+  // (Fase 09B) não recalcula a estante.
+  const layoutKey = displayed.map((b) => `${b.id}:${b.book.pages ?? ""}`).join("|");
+  const [layoutItems, setLayoutItems] = useState(() => ({ key: layoutKey, items: toShelfItems(displayed) }));
+  if (layoutItems.key !== layoutKey) setLayoutItems({ key: layoutKey, items: toShelfItems(displayed) });
   const layout = useMemo(
-    () =>
-      width === null
-        ? null
-        : layoutBookshelf(displayed.map((b) => ({ id: b.id, pages: b.book.pages })), width),
-    [displayed, width],
+    () => (width === null ? null : layoutBookshelf(layoutItems.items, width)),
+    [layoutItems, width],
   );
   const booksById = useMemo(() => new Map(displayed.map((b) => [b.id, b])), [displayed]);
   const cobwebs = useMemo(() => (layout ? getCobwebSlots(layout) : []), [layout]);
@@ -150,6 +152,10 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
         setShelvesShown(layout.shelfCount);
       }
     }
+  } else if (layoutItems.key === layoutKey && previous.books !== displayed) {
+    // Mesmo layout, dados novos (ex.: progresso): um livro removido depois
+    // sai com a capa atual.
+    setPrevious({ ...previous, books: displayed });
   }
 
   const visibleShelves = Math.max(layout?.shelfCount ?? 0, shelvesShown);
@@ -351,6 +357,11 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
     setAnnouncement(`${book.book.title} movido para a posição ${index + 1} de ${total}.`);
   }
 
+  function openBook(bookId: string) {
+    const origin = bookRefs.current.get(bookId);
+    if (origin) onOpen?.(bookId, origin);
+  }
+
   // Alternativa ao drag: as setas movem o livro uma posição na ordem.
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, bookId: string) {
     const step = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
@@ -419,12 +430,13 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
                   book={book}
                   placement={placement}
                   dragging={drag?.id === book.id}
+                  open={book.id === openBookId}
                   instructionsId={onMove ? instructionsId : undefined}
                   onPointerDown={
                     onMove ? (event) => dragRef.current?.start(event.nativeEvent, book.id) : undefined
                   }
                   onKeyDown={onMove ? (event) => handleKeyDown(event, book.id) : undefined}
-                  onClick={onOpen ? () => onOpen(book.id) : undefined}
+                  onClick={onOpen ? () => openBook(book.id) : undefined}
                 />
               ) : null;
             })}
@@ -443,6 +455,7 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
 
       {onMove && (
         <p id={instructionsId} className="sr-only">
+          {onOpen && "Enter abre o livro. "}
           Para reordenar, arraste o livro ou use as setas para a esquerda e para a direita.
         </p>
       )}
@@ -451,6 +464,10 @@ export function Bookshelf({ books, loaded = true, onMove, onOpen }: BookshelfPro
       </p>
     </div>
   );
+}
+
+function toShelfItems(books: LibraryBook[]) {
+  return books.map((b) => ({ id: b.id, pages: b.book.pages }));
 }
 
 // Ref de callback que mantém um Map de elementos por chave.

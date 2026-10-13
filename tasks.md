@@ -278,16 +278,100 @@ Limitações e pendências:
 Pendências:
 
 - [ ] Configurar `GOOGLE_BOOKS_API_KEY` (e `BOOKS_API_CONTACT`) em `.env.local` e na Vercel; o caminho do Google Books foi verificado só por testes de normalização
-- [ ] Editar livro e atualizar progresso (`plan.md`, seções 23 e 26): o diálogo do livro ainda só mostra os dados e remove
+- [x] Atualizar progresso e feedback no livro aberto: Fase 09B
+- [ ] Editar os dados do livro no catálogo (`plan.md`, seção 26: "alterar informações editáveis"): fora do escopo da 09B
 - [ ] Botão "+" por prateleira (`plan.md`, seção 20): esta fase usa um único "Adicionar livro" no cabeçalho da seção
 - [ ] Bucket e policies de Storage para capas personalizadas, por migration (upload de capa)
 - [ ] Fluxo completo no navegador contra o remoto: requer uma conta confirmada; a validação remota cobriu as RPCs diretamente no banco
 - [ ] Testes da aplicação no repositório (etapa "Testes"): unitários e E2E seguem fora do repositório
 
+## Fase 09A — Abertura do livro
+
+Interação visual apenas: sem edição, sem progresso editável, sem
+alterações no banco.
+
+- [x] Decisão registrada (`decisions.md`, 012)
+- [x] `BookDetailsDialog` passa a ser o livro aberto: o livro sai da estante (FLIP a partir do lugar dele), vem para a frente e abre em CSS 3D (capa à esquerda com o progresso, página de papel à direita com os dados existentes)
+- [x] `src/components/book-modal/open-book-motion.ts`: etapas GSAP separadas (sair, vir para a frente, abrir, fechar e voltar), interrompíveis; reduced motion direto ao estado final
+- [x] Estante: o lugar do livro aberto fica vazio sem recalcular o layout (`openBookId`); `BookCover` exportado de `Book.tsx`; livro anuncia que abre um diálogo
+- [x] Fechar por botão, Esc ou clique fora; o livro volta ao lugar atual dele na estante; foco volta ao livro; remover fecha, devolve o livro e segue a remoção existente
+- [x] Checks: `typecheck`, `lint`, `build` e `git diff --check`
+- [x] Verificação fora do repositório: E2E no Chrome contra o stack local (livros Google Books, Open Library, manual sem capa, capa quebrada e com progresso; reabrir; drag antes e depois; ordem e reload; interrupções e Esc duplo; teclado e foco; remoção; reduced motion; toque; 390/768/1024/1440px com resize aberto); regressões da 07A, 07B e 08
+
+Pendências:
+
+- [x] Avaliação visual do usuário antes da Fase 09B (aprovada)
+- [ ] Testar em dispositivos reais (Safari/iOS e Android): toque e CSS 3D foram verificados no Chrome headless
+- [ ] Capas pequenas na origem (ex.: miniatura `zoom=1` do Google Books) ficam suaves no tamanho do livro aberto
+
+## Fase 09B — Progresso, páginas lidas e feedback
+
+Edição da relação do usuário com o livro (não do catálogo), dentro do
+livro aberto da 09A.
+
+- [x] Decisão registrada (`decisions.md`, 013)
+- [x] Migration `20261006222453_add_reading_progress.sql`: `user_books.pages_read` (≥ 0), preenchida a partir do progresso sem alterar `progress` nem `updated_at`; trigger `user_books_sync_reading` (páginas ≤ total, progresso derivado, `started_at`/`finished_at`, feedback aparado)
+- [x] Testes pgTAP: `reading_test.sql` (38); suíte local com 128/128
+- [x] `src/lib/books/reading.ts` (progresso a partir das páginas, status), validação Zod (páginas lidas, porcentagem, feedback) e `updateReading` (uma atualização sob RLS)
+- [x] Livro aberto: progresso por páginas lidas (ou porcentagem sem páginas), feedback com contador, "Salvar progresso"/"Salvar feedback", estados não salvo/salvando/salvo/erro, pergunta ao fechar com alterações não salvas ("Salvar e fechar", "Descartar", "Cancelar")
+- [x] Capa do livro aberto e da estante atualizadas ao salvar, sem reload e sem recalcular o layout da estante
+- [x] Celulares: controles num cartão de papel abaixo do livro; dados da página em duas linhas (ISBN inteiro)
+- [x] Verificação fora do repositório: 7 testes unitários (progresso, arredondamento, validação, status); E2E da 09B no Chrome contra o stack local (páginas, porcentagem, feedback, não salvo, concluído e datas, erros de rede, duplo clique, logout/login, reload, drag, 390/768/1024/1440px, reduced motion)
+- [x] Migration aplicada no remoto (`db push --dry-run`, depois `db push`) sem alterar os dados existentes (contagens e hashes conferidos antes e depois); catálogo conferido somente leitura; `src/types/database.ts` regenerado com `--linked`
+- [x] Validação remota do fluxo do trigger em bloco desfeito (`raise exception` no fim), como `authenticated` sob RLS: páginas → progresso, datas, limites, livro sem páginas, feedback aparado e transferência de `user_id` bloqueada; nenhum dado de teste restante
+- [x] Regressões 07A, 07B, 08 e 09A executadas; teste de responsividade da 09A atualizado para a página com rolagem da 09B
+
+Pendências:
+
+- [x] Livros concluídos antes desta migration não têm `finished_at`: tratados no Reading Progress (contam no total, em nenhum ano, com aviso; `decisions.md`, 014)
+
 ## Fase 09 — Reading Progress
 
-- [ ] `src/components/reading-progress/`
-- [ ] Preencher o `href` de Reading Progress em `navigation.ts`
+Item 10 da ordem de desenvolvimento (`plan.md`, seção 38); chamada de
+"Fase 10" na solicitação.
+
+- [x] Decisão registrada (`decisions.md`, 014)
+- [x] `src/lib/books/reading-progress.ts`: `READING_REFERENCE` (3,96 → 4 livros por ano, Instituto Pró-Livro, 2024; único lugar com o valor) e `summarizeReading` (concluídos = progresso 100; ano de `finished_at` no fuso do navegador; anos contínuos até o ano atual; concluídos sem data só no total)
+- [x] `finished_at` na consulta da estante (`LIBRARY_BOOK_COLUMNS`) e em `LibraryBook`; nenhuma consulta nova e nenhuma alteração no banco
+- [x] `src/components/reading-progress/`: `ReadingProgressSection` (visitante, carregando, erro com "Tentar novamente", vazio, com dados, livros sem data), `ReadingChart` (SVG medido, tábua da estante como base, referência tracejada, destaque acima da referência, ano atual em destaque, alternativa textual) e `reading-progress-motion.ts` (entrada GSAP única por `IntersectionObserver`; reduced motion no estado final)
+- [x] `LibrarySection` renderiza a seção depois da estante com os mesmos livros: concluir ou desconcluir um livro atualiza a contagem sem reload
+- [x] `href` de Reading Progress em `navigation.ts` (`/#reading-progress`)
+- [x] Checks: `typecheck`, `lint`, `build` (Home continua estática) e `git diff --check`
+- [x] Verificação fora do repositório: 13 testes unitários (nenhum livro, um livro, mesmo ano, vários anos, sem data, progresso < 100, ano atual, anos anteriores, ordem, fuso, referência); E2E no Chrome contra o stack local (visitante sem consulta, vazio, 2024/2025/2026 = 2/5/3, concluir e desconcluir com reload, um único ano, sem data, erro, animação, reduced motion, 390/768/1024/1440px e resize, Navbar); uma única consulta a `user_books` no build de produção; regressões 07A, 07B, 08, 09A e 09B
+
+### Redesign visual (após a primeira revisão visual)
+
+Sem mudança em dados, contagem, referência, banco ou consultas.
+
+- [x] Decisão registrada (`decisions.md`, 015) e `docs/design.md` atualizado
+- [x] Atmosfera escura a partir do fim da estante (gradiente, luz quente baixa, grão), sem divisória nem tábua
+- [x] Cabeçalho editorial ("Sua evolução de leitura") e números separados por um fio, sem cards
+- [x] Gráfico: linha em papel com brilho, hastes pontilhadas, base fina, referência tracejada nomeada, dourado recortado acima da referência, ano e quantidade abaixo de cada ponto
+- [x] `ReadingBook.tsx`: livro aberto em SVG sobre o ponto do ano atual (e no começo do horizonte nos estados visitante e vazio)
+- [x] Motion: entrada do cabeçalho e do gráfico (uma vez cada) e micro-movimento contínuo (livro, página, halo, luz), pausado fora da tela; reduced motion sem nenhum dos dois
+- [x] Verificação fora do repositório: E2E da seção atualizado (ordem da entrada por amostragem, livro alinhado ao ponto em 390/768/1024/1440px e no resize, micro-movimento vivo e pausado fora da tela, rótulos sem sobreposição com seis anos, reduced motion parado) e regressões 07A, 07B, 08, 09A e 09B
+
+### Escala mensal acumulada (após a aprovação do redesign)
+
+Mesma direção visual; muda só a escala do gráfico. Sem mudança em banco,
+consultas ou referência.
+
+- [x] Decisão registrada (`decisions.md`, 016); `docs/design.md` e `docs/banco-de-dados.md` (texto sobre `finished_at`) atualizados
+- [x] `summarizeReading` devolve `months`: total acumulado no fim de cada mês, do mês da primeira conclusão datada até o mês atual, sem lacunas; referência acumulada de 3,96 / 12 por mês; acima = estritamente maior no mesmo mês; concluídos sem data só no total
+- [x] Gráfico: linha do zero (começo do primeiro mês) até o mês atual, pontos só nos meses com conclusões, referência como trajetória tracejada, dourado recortado acima dela, livro e halo no mês atual
+- [x] Eixo: meses (a cada 1, 2, 3 ou 6, pelo espaço disponível; o atual sempre) e anos (o atual e o primeiro sempre), com uma marca no começo de cada ano; alternativa textual com todos os meses
+- [x] Textos de "ano" para "mês" (visitante, vazio, livros sem data); entrada dos rótulos do eixo com duração limitada
+- [x] Checks: `typecheck`, `lint`, `build` (Home continua estática) e `git diff --check`
+- [x] Eixo de no mínimo 12 meses (`decisions.md`, 017): meses seguintes ao atual só no gráfico, apagados, com a referência (`referenceAt`) chegando a 3,96; linha, pontos, dourado e livro só até o mês atual; leitor de tela só com o histórico e legenda explicando o eixo
+- [x] Verificação fora do repositório: 20 testes unitários da série (23 com `referenceAt` e o eixo); E2E da seção reescrito para a série mensal (contra `next start` local na porta 3100, porque a 3000 estava com o dev server do usuário); regressões 07A, 07B, 08, 09A e 09B; pgTAP
+
+Pendências:
+
+- [x] Primeira revisão visual do usuário (gerou o redesign)
+- [x] Revisão visual do redesign pelo usuário (aprovada)
+- [x] Revisão da escala mensal: referência "perto da base" diagnosticada (série de um mês numa conta real; cálculo e geometria corretos) e resolvida com o eixo mínimo de 12 meses (abaixo)
+- [ ] Revisão visual do eixo de 12 meses pelo usuário
+- [ ] Crédito da referência no Footer (`plan.md`, seção 30), lendo `READING_REFERENCE`
 
 ## Fase 10 — Footer
 

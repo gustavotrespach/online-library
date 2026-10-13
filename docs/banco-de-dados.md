@@ -92,10 +92,11 @@ Auth não é sincronizada. A função `create_profile_for_new_user()` é
 | `user_id`     | `uuid`        | `not null`; FK → `auth.users.id`, `on delete cascade`  |
 | `book_id`     | `uuid`        | `not null`; FK → `books.id`, `on delete restrict`      |
 | `progress`    | `smallint`    | `not null`, default `0`, entre 0 e 100                 |
+| `pages_read`  | `integer`     | opcional, ≥ 0 e no máximo `books.pages` (trigger)      |
 | `position`    | `integer`     | `not null`, ≥ 0, única por usuário; ordem da estante   |
-| `started_at`  | `timestamptz` | opcional                                               |
-| `finished_at` | `timestamptz` | opcional                                               |
-| `feedback`    | `text`        | opcional, até 5000 caracteres                          |
+| `started_at`  | `timestamptz` | opcional; definida pelo trigger de leitura             |
+| `finished_at` | `timestamptz` | opcional; definida pelo trigger de leitura             |
+| `feedback`    | `text`        | opcional, até 5000 caracteres; aparado, vazio → `null` |
 | `created_at`  | `timestamptz` | `not null`, default `now()`                            |
 | `updated_at`  | `timestamptz` | `not null`, default `now()`, trigger                   |
 
@@ -125,14 +126,44 @@ derivado de `progress`, que é a fonte de verdade:
 | 1–99       | Reading     |
 | 100        | Finished    |
 
-**Datas de leitura.** `started_at` e `finished_at` são opcionais e não
-são preenchidas automaticamente. A regra de quando uma leitura começa ou
-termina será implementada com a lógica da biblioteca. Por serem
-`timestamptz`, a contagem anual (Fase 09) deve considerar o fuso horário
-do usuário ao extrair o ano de `finished_at`.
+**Páginas lidas e progresso** (`decisions.md`, 013). O trigger
+`user_books_sync_reading` (`before insert or update`) mantém os dois
+coerentes em qualquer caminho de escrita:
 
-**Feedback.** Opinião pessoal do usuário sobre o livro. Pertence ao
-relacionamento usuário ↔ livro, por isso fica em `user_books`. O limite
+- Livro com páginas (`books.pages`): `pages_read` é a entrada do usuário;
+  `progress` é derivado dela — 0 só com 0 páginas, 100 só com todas, e
+  entre 1 e 99 no meio (`round(pages_read × 100 / pages)`, limitado a
+  1–99). Um `progress` gravado diretamente vira as páginas equivalentes
+  (`round(pages × progress / 100)`) e é recalculado a partir delas.
+- Livro sem páginas: `pages_read` é sempre nulo e `progress` é editado
+  diretamente.
+- `pages_read` negativo é recusado pela constraint
+  `user_books_pages_read_check` (`23514`); acima de `books.pages`, ou num
+  livro sem páginas, pelo trigger (`22023`).
+- Na inserção (inclusive por `add_book_to_library`), `pages_read` recebe
+  as páginas equivalentes ao progresso inicial (0).
+
+**Datas de leitura.** Definidas pelo mesmo trigger, só quando o progresso
+muda (o cliente não as altera; em qualquer outra atualização, os valores
+anteriores são mantidos):
+
+- `started_at`: `now()` quando o progresso sai de 0 pela primeira vez.
+  Nunca é sobrescrita nem apagada (voltar a 0% mantém o início).
+- `finished_at`: `now()` ao chegar a 100%; `null` ao sair de 100%.
+- Livros que já estavam em 100% antes da migration da Fase 09B ficaram
+  sem `finished_at` (nenhuma data foi inventada) até a próxima mudança de
+  progresso.
+
+Por serem `timestamptz`, o Reading Progress extrai o mês (e o ano) de
+`finished_at` no fuso do navegador, o do usuário, para o total acumulado
+mês a mês. Livros concluídos sem `finished_at` contam no total, mas em
+nenhum mês (`decisions.md`, 014 e 016).
+
+**Feedback.** Opinião pessoal e privada do usuário sobre o livro
+(somente o RLS de `user_books` dá acesso a ele). Pertence ao
+relacionamento usuário ↔ livro, por isso fica em `user_books`. O trigger
+de leitura remove os espaços das pontas e grava `null` no lugar de um
+texto vazio. O limite
 de 5000 caracteres existe apenas para proteger o banco contra entradas
 excessivas; não é regra de produto e pode ser revisto. Comentários
 públicos, ratings e reviews sociais não fazem parte do modelo atual.
@@ -214,12 +245,13 @@ consulta):
 | `add_book_to_library(p_title, p_author, p_cover_url, p_pages, p_publication_year, p_isbn, p_source, p_source_id)` | `security definer`, `search_path` vazio | `authenticated` | Valida os dados, reutiliza o livro do catálogo (por ISBN ou origem) ou o cria, e adiciona à estante de `auth.uid()` com progresso 0, no fim. Devolve `user_book_id` e `already_in_library` |
 | `set_library_order(p_user_book_ids uuid[])` | `security invoker` (sob RLS), `strict` | `authenticated` | Grava a ordem da estante: os ids recebidos ocupam as posições 0, 1, 2…; os demais livros do usuário vão para o fim |
 | `set_user_book_position()` | trigger, como quem insere | nenhum papel da API | Posição padrão de livros novos |
+| `sync_user_book_reading()` | trigger (`user_books_sync_reading`), `security invoker`, `search_path` vazio | nenhum papel da API | Páginas lidas ↔ progresso, datas de leitura e feedback (acima) |
 
 - `anon` não executa nenhuma das funções.
 - `add_book_to_library` nunca recebe o dono como parâmetro: usa sempre
   `auth.uid()`. Erros de validação usam o SQLSTATE `22023`.
-- Nenhuma policy nova: `set_library_order` só altera linhas que o RLS de
-  `user_books` permite ao usuário atualizar.
+- Nenhuma policy nova: `set_library_order` e a gravação da leitura só
+  alteram linhas que o RLS de `user_books` permite ao usuário atualizar.
 
 ## Storage
 
@@ -252,7 +284,11 @@ Se o CLI não encontrar o Docker Desktop, ative o socket padrão do
 Docker (Settings → Advanced) ou exporte `DOCKER_HOST` apontando para o
 socket do Docker Desktop (`unix://$HOME/.docker/run/docker.sock`).
 
-`supabase/tests/library_test.sql` cobre a posição (trigger, unicidade,
+`supabase/tests/reading_test.sql` cobre páginas lidas (válidas, negativas,
+acima do total, livro sem páginas), o progresso derivado (0, 1, 99 e 100),
+`started_at` e `finished_at`, as datas fora do alcance do cliente, o
+feedback (aparado, 5000 e 5001 caracteres, vazio) e o isolamento entre
+usuários; `supabase/tests/library_test.sql` cobre a posição (trigger, unicidade,
 troca em um comando), `set_library_order` (inclusive com ids de outro
 usuário), o isolamento da posição entre usuários e `add_book_to_library`
 (validação, duplicatas, reaproveitamento do catálogo, permissões);
@@ -262,12 +298,12 @@ foreign keys, `updated_at`, RLS ativo e o conjunto exato de policies;
 `supabase/tests/profile_trigger_test.sql` cobre a criação do profile e
 os privilégios da função do trigger.
 
-Última validação (2026-10-06, Fase 08): Supabase CLI 2.119.0,
-PostgreSQL 17.11 local; `db reset` aplicou as três migrations do zero e
-`test db` passou com 90/90 testes (36 da estante, 16 do trigger, 21 de
-RLS, 17 de schema). O preenchimento de `position` em registros
-existentes foi verificado aplicando a migration sobre dados das fases
-anteriores.
+Última validação (2026-10-06, Fase 09B): Supabase CLI 2.119.0,
+PostgreSQL 17.11 local; `db reset` aplicou as quatro migrations do zero e
+`test db` passou com 128/128 testes (38 da leitura, 36 da estante, 16 do
+trigger, 21 de RLS, 17 de schema). O preenchimento de `pages_read` foi
+verificado aplicando a migration (`migration up`) sobre uma biblioteca já
+com livros: `progress` e `updated_at` não mudaram.
 
 ### Projeto remoto
 
@@ -313,6 +349,21 @@ bloco PL/pgSQL encerrado por `raise exception`, que desfaz tudo; depois
 dele, `books`, `user_books`, `profiles` e `auth.users` continuaram com 0
 linhas.
 
+A migration `20261006222453_add_reading_progress.sql` (Fase 09B) foi
+aplicada no remoto em 2026-10-06 (`db push`, após `--dry-run`), já com
+dados reais (1 usuário, 8 livros, 7 linhas em `user_books`). Coluna
+`pages_read` (`integer`, opcional, sem default), constraint
+`user_books_pages_read_check`, trigger `user_books_sync_reading`, função
+(sem `security definer`, `search_path` vazio, sem `EXECUTE` para os papéis
+da API), RLS, as 8 policies e os grants foram conferidos no catálogo. Os
+dados existentes foram comparados por contagem e por hash das linhas
+antes e depois: só `pages_read` mudou (0 nas 5 linhas com páginas, nulo
+nas 2 sem páginas); `progress`, datas, feedback e `updated_at` ficaram
+iguais. O fluxo do trigger foi exercitado como `authenticated`, sob RLS,
+num bloco encerrado por `raise exception` com usuário e livros de teste
+criados no próprio bloco; depois dele, as contagens e os hashes
+continuaram iguais e não restou nenhum dado de teste.
+
 ## Supabase Auth
 
 Configuração não sensível (remoto conferido com `npx supabase config
@@ -353,7 +404,14 @@ autenticados (`src/lib/books/user-books.ts`):
   usuário;
 - adicionar: `rpc("add_book_to_library")`;
 - reordenar: `rpc("set_library_order")`, uma chamada por drop;
+- salvar a leitura (progresso ou páginas lidas, feedback): `update` em
+  `user_books` com `select` da linha atualizada, uma chamada por
+  salvamento (`updateReading`, sob RLS);
 - remover: `delete` em `user_books` (sob RLS).
+
+O Reading Progress não consulta o banco: usa as mesmas linhas que a
+estante carregou (`progress` e `finished_at`), já restritas pelo RLS
+(`decisions.md`, 014).
 
 As buscas externas (Google Books, Open Library) não tocam o banco; ver
 `docs/integracoes.md`.
